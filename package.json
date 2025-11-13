@@ -18,7 +18,7 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^3.1.0",
+    "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.15",
     "postcss": "^8.4.26",
     "prettier": "^3.2.2",
