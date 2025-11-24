@@ -266,9 +266,10 @@ export default function ExpenseTrackerApp() {
   const monthlyData = getMonthlyData()
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 p-4 md:p-8">
-      {/* Tu JSX aquí... */}
-      {/* Todo tu código de renderización que compartiste se mantiene igual */}
-    </div>
+  <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 p-4 md:p-8">
+    <h1>Hola, ya renderizo!</h1>
+  </div>
+)
+
   )
 }
