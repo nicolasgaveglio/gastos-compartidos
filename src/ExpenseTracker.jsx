@@ -422,7 +422,7 @@ const ExpenseTrackerApp = () => {
 
             <button
               onClick={openManualExpenseModal}
-              className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg hover:scale-105 transition-all"
+              className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:shadow-lg hover:scale-105 transition-all"
             >
               <Plus size={20} />
               Agregar Gasto
@@ -859,4 +859,4 @@ function ReassignControl({ categories, selectedKeys, onReassign }) {
   );
 }
 
-export default ExpenseTrackerApp; 
+export default ExpenseTrackerApp;
