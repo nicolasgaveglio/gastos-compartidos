@@ -11,7 +11,7 @@
     "deploy": "npm run build && gh-pages -d dist"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.33.1",
+    "@supabase/supabase-js": "^2.84.0",
     "lucide-react": "^0.290.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
