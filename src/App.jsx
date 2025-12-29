@@ -178,32 +178,44 @@ const ExpenseTrackerApp = () => {
   };
 
   const persistExpenses = async (newExpenses) => {
-    if (!user || !groupId) {
-      console.error('No user or groupId available');
-      alert('Error: No hay grupo configurado. Crea un grupo primero.');
-      return;
-    }
+  console.log('DEBUG persistExpenses call:', {
+    newExpenses,
+    isArray: Array.isArray(newExpenses),
+    length: newExpenses?.length,
+    userId: user?.id,
+    groupId
+  });
 
-    const expensesToUpsert = newExpenses.map(exp => ({
-      ...exp,
-      id: exp.id || crypto.randomUUID(),
-      group_id: groupId,
-      user_id: user.id,
-      updated_at: new Date().toISOString()
-    }));
+  if (!user || !groupId) {
+    console.error('No user or groupId available');
+    alert('Error: No hay grupo configurado. Crea un grupo primero.');
+    return;
+  }
 
-    const { error } = await supabase
-      .from('expenses')
-      .upsert(expensesToUpsert, { onConflict: 'id' });
+  const expensesToUpsert = newExpenses.map(exp => ({
+    ...exp,
+    id: exp.id || crypto.randomUUID(),
+    group_id: groupId,
+    user_id: user.id,
+    updated_at: new Date().toISOString()
+  }));
 
-    if (error) {
-      console.error('Error saving expenses:', error);
-      alert(`Error guardando: ${error.message}`);
-    } else {
-      setHasUnsavedChanges(false);
-      await loadExpenses();
-    }
-  };
+  console.log('DEBUG upsert payload:', expensesToUpsert);
+
+  const { data, error } = await supabase
+    .from('expenses')
+    .upsert(expensesToUpsert, { onConflict: 'id' });
+
+  console.log('DEBUG upsert response:', { data, error });
+
+  if (error) {
+    console.error('Error saving expenses:', error);
+    alert(`Error guardando: ${error.message}`);
+  } else {
+    setHasUnsavedChanges(false);
+    await loadExpenses();
+  }
+};
 
   const persistCategories = async (updatedCategories) => {
     if (!groupId) return;
