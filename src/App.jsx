@@ -1,3 +1,8 @@
+<<<<<<< HEAD
+=======
+// Hola, force deploy
+import { supabase } from './supabaseClient';
+>>>>>>> 7c8fc28f8d43d6374e7f51e0680d43ee7b8588bd
 import React, { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
 import {
