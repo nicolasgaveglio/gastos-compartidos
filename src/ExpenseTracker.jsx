@@ -120,20 +120,31 @@ const ExpenseTrackerApp = () => {
   };
 
   const loadExpenses = async () => {
-    if (!user || !groupId) return;
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  
+  // Buscar grupo del usuario
+  const { data: groups } = await supabase
+    .from('groups')
+    .select('id')
+    .contains('user_ids', [user.id]);
     
-    const { data, error } = await supabase
-      .from('expenses')
-      .select('*')
-      .eq('group_id', groupId)
-      .order('date', { ascending: false });
-      
-    if (error) {
-      console.error('Error loading expenses:', error);
-    } else {
-      setExpenses(data || []);
-    }
-  };
+  const currentGroupId = groups?.[0]?.id || 3;
+  setGroupId(currentGroupId);
+  
+  const { data, error } = await supabase
+    .from('expenses')
+    .select('*')
+    .eq('group_id', currentGroupId)
+    .order('date', { ascending: false });
+    
+  if (error) console.error('Error loading:', error);
+  else {
+    console.log('📊 Loaded:', data?.length || 0, 'expenses');
+    setExpenses(data || []);
+  }
+};
+
 
   const loadCategories = async () => {
     if (!groupId) return;
@@ -154,28 +165,39 @@ const ExpenseTrackerApp = () => {
   };
 
   const persistExpenses = async (newExpenses) => {
-    if (!user || !groupId) return;
-    
-    const expensesToUpsert = newExpenses.map(exp => ({
-      ...exp,
-      id: exp.id || crypto.randomUUID(),
-      group_id: groupId,
-      user_id: user.id,
-      updated_at: new Date().toISOString()
-    }));
+  // 🔒 Verificar user antes de guardar
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    console.error('❌ No user logged in');
+    alert('❌ Debes iniciar sesión');
+    return;
+  }
+  
+  const expensesToUpsert = newExpenses.map(exp => ({
+    ...exp,
+    id: exp.id || crypto.randomUUID(),
+    group_id: groupId || 3,  // Fallback
+    user_id: user.id,
+    updated_at: new Date().toISOString()
+  }));
 
-    const { error } = await supabase
-      .from('expenses')
-      .upsert(expensesToUpsert, { onConflict: 'id' });
+  console.log('💾 Saving:', expensesToUpsert.length, 'expenses'); // Debug
 
-    if (error) {
-      console.error('Error saving expenses:', error);
-    } else {
-      setHasUnsavedChanges(false);
-      // Reload to get fresh data
-      await loadExpenses();
-    }
-  };
+  const { error } = await supabase
+    .from('expenses')
+    .upsert(expensesToUpsert, { onConflict: 'id' });
+
+  if (error) {
+    console.error('❌ Save error:', error);
+    alert(`❌ Error: ${error.message}`);
+  } else {
+    console.log('✅ Saved successfully');
+    setHasUnsavedChanges(false);
+    // Recargar datos frescos
+    await loadExpenses();
+  }
+};
+
 
   const persistCategories = async (updatedCategories) => {
     if (!groupId) return;
