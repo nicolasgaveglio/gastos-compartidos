@@ -1,3 +1,4 @@
+import { supabase } from './supabaseClient';
 import React, { useEffect, useState } from 'react';
 import {
   ResponsiveContainer,
@@ -54,6 +55,8 @@ const DEFAULT_CATEGORIES = {
 const COLORS = ['#8b5cf6', '#ec4899', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#14b8a6', '#f97316'];
 
 const ExpenseTrackerApp = () => {
+  const [session, setSession] = useState(null);
+  const [user, setUser] = useState(null);
   const [expenses, setExpenses] = useState([]);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [loading, setLoading] = useState(true);
@@ -74,45 +77,120 @@ const ExpenseTrackerApp = () => {
     category: 'Otro',
     person: 'Nicolás'
   });
+  const [groupId, setGroupId] = useState(3);
 
   useEffect(() => {
-    loadData();
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) {
+        setUser(session.user);
+        loadInitialData();
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, s) => {
+      setSession(s);
+      if (s) {
+        setUser(s.user);
+        loadInitialData();
+      } else {
+        setUser(null);
+        setExpenses([]);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const loadData = async () => {
+  const loadInitialData = async () => {
+    await Promise.all([loadGroupId(), loadExpenses(), loadCategories()]);
+  };
+
+  const loadGroupId = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('groups')
+      .select('id')
+      .contains('user_ids', [user.id])
+      .single();
+    
+    if (data) {
+      setGroupId(data.id);
+    }
+  };
+
+  const loadExpenses = async () => {
+    if (!user || !groupId) return;
+    
+    const { data, error } = await supabase
+      .from('expenses')
+      .select('*')
+      .eq('group_id', groupId)
+      .order('date', { ascending: false });
+      
+    if (error) {
+      console.error('Error loading expenses:', error);
+    } else {
+      setExpenses(data || []);
+    }
+  };
+
+  const loadCategories = async () => {
+    if (!groupId) return;
+    
     try {
-      const expensesResult = await window.storage.get('shared-expenses', true);
-      if (expensesResult && expensesResult.value) {
-        setExpenses(JSON.parse(expensesResult.value));
-      }
-      const categoriesResult = await window.storage.get('custom-categories', true);
-      if (categoriesResult && categoriesResult.value) {
-        const saved = JSON.parse(categoriesResult.value);
-        setCategories({ ...DEFAULT_CATEGORIES, ...saved });
+      const { data } = await supabase
+        .from('categories')
+        .select('categories')
+        .eq('group_id', groupId)
+        .single();
+        
+      if (data && data.categories) {
+        setCategories({ ...DEFAULT_CATEGORIES, ...data.categories });
       }
     } catch (error) {
-      console.log('Comenzando desde cero');
-      setCategories(DEFAULT_CATEGORIES);
-    } finally {
-      setLoading(false);
+      console.error('Error loading categories:', error);
     }
   };
 
   const persistExpenses = async (newExpenses) => {
-    setExpenses(newExpenses);
-    try {
-      await window.storage.set('shared-expenses', JSON.stringify(newExpenses), true);
-    } catch (e) {
-      console.error('Error guardando gastos', e);
+    if (!user || !groupId) return;
+    
+    const expensesToUpsert = newExpenses.map(exp => ({
+      ...exp,
+      id: exp.id || crypto.randomUUID(),
+      group_id: groupId,
+      user_id: user.id,
+      updated_at: new Date().toISOString()
+    }));
+
+    const { error } = await supabase
+      .from('expenses')
+      .upsert(expensesToUpsert, { onConflict: 'id' });
+
+    if (error) {
+      console.error('Error saving expenses:', error);
+    } else {
+      setHasUnsavedChanges(false);
+      // Reload to get fresh data
+      await loadExpenses();
     }
   };
 
-  const persistCategories = async (newCategories) => {
-    setCategories(newCategories);
-    try {
-      await window.storage.set('custom-categories', JSON.stringify(newCategories), true);
-    } catch (e) {
-      console.error('Error guardando categorias', e);
+  const persistCategories = async (updatedCategories) => {
+    if (!groupId) return;
+    
+    const { error } = await supabase
+      .from('categories')
+      .upsert([{ 
+        group_id: groupId, 
+        categories: updatedCategories 
+      }], { onConflict: 'group_id' });
+
+    if (error) {
+      console.error('Error saving categories:', error);
+    } else {
+      setHasUnsavedChanges(false);
     }
   };
 
@@ -149,7 +227,6 @@ const ExpenseTrackerApp = () => {
       }
       if (headerRowIndex === -1) {
         alert('No se pudo encontrar el formato correcto del extracto de Santander');
-        setUploading(false);
         return;
       }
 
@@ -183,7 +260,10 @@ const ExpenseTrackerApp = () => {
 
       const existingIds = new Set(expenses.map(e => `${e.date}-${e.concept}-${e.amount}`));
       const filteredNew = newExpenses.filter(e => !existingIds.has(`${e.date}-${e.concept}-${e.amount}`));
-      const updated = [...expenses, ...filteredNew].sort((a, b) => new Date(b.date.split('/').reverse().join('-')) - new Date(a.date.split('/').reverse().join('-')));
+      const updated = [...expenses, ...filteredNew].sort((a, b) => 
+        new Date(b.date.split('/').reverse().join('-')) - new Date(a.date.split('/').reverse().join('-'))
+      );
+      
       await persistExpenses(updated);
       alert(`✅ ${filteredNew.length} nuevos gastos añadidos`);
     } catch (error) {
@@ -210,19 +290,24 @@ const ExpenseTrackerApp = () => {
   };
 
   const saveEdit = async (expenseId) => {
-    const updated = expenses.map(exp => exp.id === expenseId ? { ...exp, category: editCategory } : exp);
+    const updated = expenses.map(exp => 
+      exp.id === expenseId ? { ...exp, category: editCategory } : exp
+    );
     await persistExpenses(updated);
     setEditingId(null);
     setEditCategory('');
   };
 
   const toggleSelectExpense = (id) => {
-    setSelectedExpenses(prev => prev.includes(id) ? prev.filter(eid => eid !== id) : [...prev, id]);
+    setSelectedExpenses(prev => 
+      prev.includes(id) ? prev.filter(eid => eid !== id) : [...prev, id]
+    );
   };
 
   const deleteSelectedExpenses = async () => {
     if (selectedExpenses.length === 0) return;
     if (!confirm(`¿Eliminar ${selectedExpenses.length} gasto(s)?`)) return;
+    
     const updated = expenses.filter(exp => !selectedExpenses.includes(exp.id));
     await persistExpenses(updated);
     setSelectedExpenses([]);
@@ -258,7 +343,9 @@ const ExpenseTrackerApp = () => {
       person: manualExpense.person
     };
 
-    const updated = [newExpense, ...expenses].sort((a, b) => new Date(b.date.split('/').reverse().join('-')) - new Date(a.date.split('/').reverse().join('-')));
+    const updated = [newExpense, ...expenses].sort((a, b) => 
+      new Date(b.date.split('/').reverse().join('-')) - new Date(a.date.split('/').reverse().join('-'))
+    );
     await persistExpenses(updated);
     setShowManualExpenseModal(false);
     alert('✅ Gasto agregado correctamente');
@@ -280,9 +367,14 @@ const ExpenseTrackerApp = () => {
   const getCategoryData = () => {
     const filtered = getFilteredExpenses();
     const categoryTotals = {};
-    filtered.forEach(exp => categoryTotals[exp.category] = (categoryTotals[exp.category] || 0) + exp.amount);
-    const arr = Object.entries(categoryTotals).map(([name, value]) => ({ name, value: parseFloat(value.toFixed(2)) }));
-    return arr.sort((a, b) => b.value - a.value).slice(0, 5);
+    filtered.forEach(exp => 
+      categoryTotals[exp.category] = (categoryTotals[exp.category] || 0) + exp.amount
+    );
+    const arr = Object.entries(categoryTotals)
+      .map(([name, value]) => ({ name, value: parseFloat(value.toFixed(2)) }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
+    return arr;
   };
 
   const getMonthlyData = () => {
@@ -306,7 +398,9 @@ const ExpenseTrackerApp = () => {
   const getPersonData = () => {
     const filtered = getFilteredExpenses();
     const personTotals = { 'Nicolás': 0, 'Connie': 0 };
-    filtered.forEach(exp => personTotals[exp.person] = (personTotals[exp.person] || 0) + exp.amount);
+    filtered.forEach(exp => 
+      personTotals[exp.person] = (personTotals[exp.person] || 0) + exp.amount
+    );
     return [
       { name: 'Nicolás', value: parseFloat((personTotals['Nicolás'] || 0).toFixed(2)) },
       { name: 'Connie', value: parseFloat((personTotals['Connie'] || 0).toFixed(2)) }
@@ -325,15 +419,22 @@ const ExpenseTrackerApp = () => {
   };
 
   const toggleSelectCategoryKey = (key) => {
-    setSelectedCategoryKeys(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
+    setSelectedCategoryKeys(prev => 
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    );
   };
 
   const deleteSelectedCategories = async () => {
     if (selectedCategoryKeys.length === 0) return alert('Selecciona al menos una categoría para eliminar.');
     if (!confirm(`Eliminar ${selectedCategoryKeys.length} categoría(s)? Los gastos pasarán a "Otro".`)) return;
+    
     const updatedCategories = { ...categories };
     selectedCategoryKeys.forEach(k => delete updatedCategories[k]);
-    const updatedExpenses = expenses.map(exp => selectedCategoryKeys.includes(exp.category) ? { ...exp, category: 'Otro' } : exp);
+    
+    const updatedExpenses = expenses.map(exp => 
+      selectedCategoryKeys.includes(exp.category) ? { ...exp, category: 'Otro' } : exp
+    );
+    
     await persistExpenses(updatedExpenses);
     await persistCategories(updatedCategories);
     setSelectedCategoryKeys([]);
@@ -343,9 +444,14 @@ const ExpenseTrackerApp = () => {
   const reassignSelectedCategories = async (targetCategory) => {
     if (selectedCategoryKeys.length === 0) return alert('Selecciona al menos una categoría para reasignar.');
     if (!targetCategory || !categories[targetCategory]) return alert('Selecciona una categoría destino válida.');
-    const updatedExpenses = expenses.map(exp => selectedCategoryKeys.includes(exp.category) ? { ...exp, category: targetCategory } : exp);
+    
+    const updatedExpenses = expenses.map(exp => 
+      selectedCategoryKeys.includes(exp.category) ? { ...exp, category: targetCategory } : exp
+    );
+    
     const updatedCategories = { ...categories };
     selectedCategoryKeys.forEach(k => delete updatedCategories[k]);
+    
     await persistExpenses(updatedExpenses);
     await persistCategories(updatedCategories);
     setSelectedCategoryKeys([]);
@@ -357,10 +463,15 @@ const ExpenseTrackerApp = () => {
     const oldName = selectedCategoryKeys[0];
     const newName = prompt('Nuevo nombre para la categoría', oldName);
     if (!newName || newName.trim() === '' || newName === oldName) return;
+    
     const updatedCategories = { ...categories };
     updatedCategories[newName] = updatedCategories[oldName] || [];
     delete updatedCategories[oldName];
-    const updatedExpenses = expenses.map(exp => exp.category === oldName ? { ...exp, category: newName } : exp);
+    
+    const updatedExpenses = expenses.map(exp => 
+      exp.category === oldName ? { ...exp, category: newName } : exp
+    );
+    
     await persistCategories(updatedCategories);
     await persistExpenses(updatedExpenses);
     setSelectedCategoryKeys([]);
@@ -371,17 +482,20 @@ const ExpenseTrackerApp = () => {
     const name = newCategoryName.trim();
     if (!name) return alert('Escribe un nombre válido.');
     if (categories[name]) return alert('Ya existe esa categoría.');
+    
     const updated = { ...categories, [name]: [] };
     await persistCategories(updated);
     setNewCategoryName('');
   };
 
-  if (loading) {
+  if (loading || !user) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-purple-600 mx-auto" />
-          <p className="mt-4 text-gray-600 font-medium">Cargando gastos...</p>
+          <p className="mt-4 text-gray-600 font-medium">
+            {loading ? 'Cargando gastos...' : 'Inicia sesión para continuar'}
+          </p>
         </div>
       </div>
     );
@@ -410,7 +524,6 @@ const ExpenseTrackerApp = () => {
                 onClick={async () => {
                   await persistExpenses(expenses);
                   await persistCategories(categories);
-                  setHasUnsavedChanges(false);
                   alert('✅ Cambios guardados correctamente');
                 }}
                 className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold bg-green-600 text-white hover:bg-green-700 transition-all hover:shadow-lg"
@@ -448,6 +561,7 @@ const ExpenseTrackerApp = () => {
           </div>
         </div>
 
+        {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100">
             <div className="flex items-center justify-between">
@@ -486,6 +600,7 @@ const ExpenseTrackerApp = () => {
           </div>
         </div>
 
+        {/* Category Manager Button */}
         <div className="flex items-center justify-between mb-6 gap-4">
           <button
             onClick={() => setShowCategoryManager(true)}
@@ -494,10 +609,10 @@ const ExpenseTrackerApp = () => {
             <ListChecks size={18} />
             Gestionar Categorías
           </button>
-
           <p className="text-sm text-gray-600">Las categorías están disponibles en filtros — gestionalas desde aquí.</p>
         </div>
 
+        {/* Charts */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100">
             <h3 className="text-lg font-bold mb-4">Top 5 Categorías</h3>
@@ -542,6 +657,7 @@ const ExpenseTrackerApp = () => {
           </div>
         </div>
 
+        {/* Filters */}
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-8 border border-purple-100">
           <div className="flex items-center gap-2 mb-4">
             <Filter size={20} className="text-purple-600" />
@@ -584,106 +700,138 @@ const ExpenseTrackerApp = () => {
           </div>
         </div>
 
+        {/* Expenses Table */}
         {expenses.length === 0 ? (
           <div className="bg-white rounded-2xl shadow-lg p-12 text-center border border-purple-100">
             <Upload className="mx-auto text-gray-400 mb-4" size={64} />
             <p className="text-gray-600">Subí tu extracto de Santander para comenzar</p>
           </div>
         ) : (
-          <>
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100 mb-8">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-xl font-bold text-gray-800">Lista de Gastos ({filteredExpenses.length})</h3>
-                {selectedExpenses.length > 0 && (
-                  <button
-                    onClick={deleteSelectedExpenses}
-                    className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all"
-                  >
-                    <Trash2 size={16} />
-                    Eliminar seleccionados
-                  </button>
-                )}
-              </div>
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100 mb-8">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-gray-800">Lista de Gastos ({filteredExpenses.length})</h3>
+              {selectedExpenses.length > 0 && (
+                <button
+                  onClick={deleteSelectedExpenses}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-all"
+                >
+                  <Trash2 size={16} />
+                  Eliminar seleccionados
+                </button>
+              )}
+            </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b-2 border-purple-100">
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b-2 border-purple-100">
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">
+                      <input
+                        type="checkbox"
+                        checked={selectedExpenses.length === filteredExpenses.length && filteredExpenses.length > 0}
+                        onChange={(e) => setSelectedExpenses(e.target.checked ? filteredExpenses.map(exp => exp.id) : [])}
+                      />
+                    </th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Fecha</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Concepto</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Categoría</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Persona</th>
+                    <th className="text-right py-3 px-4 font-semibold text-gray-700">Monto</th>
+                    <th className="text-center py-3 px-4 font-semibold text-gray-700">Acción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredExpenses.map((expense) => (
+                    <tr key={expense.id} className="border-b border-gray-100 hover:bg-purple-50 transition-colors">
+                      <td className="py-3 px-4">
                         <input
                           type="checkbox"
-                          checked={selectedExpenses.length === filteredExpenses.length && filteredExpenses.length > 0}
-                          onChange={(e) => setSelectedExpenses(e.target.checked ? filteredExpenses.map(exp => exp.id) : [])}
+                          checked={selectedExpenses.includes(expense.id)}
+                          onChange={() => toggleSelectExpense(expense.id)}
                         />
-                      </th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Fecha</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Concepto</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Categoría</th>
-                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Persona</th>
-                      <th className="text-right py-3 px-4 font-semibold text-gray-700">Monto</th>
-                      <th className="text-center py-3 px-4 font-semibold text-gray-700">Acción</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredExpenses.map((expense) => (
-                      <tr key={expense.id} className="border-b border-gray-100 hover:bg-purple-50 transition-colors">
-                        <td className="py-3 px-4">
-                          <input
-                            type="checkbox"
-                            checked={selectedExpenses.includes(expense.id)}
-                            onChange={() => toggleSelectExpense(expense.id)}
-                          />
-                        </td>
-                        <td className="py-3 px-4 text-sm text-gray-600">{expense.date}</td>
-                        <td className="py-3 px-4 text-sm text-gray-800 max-w-md truncate">{expense.concept}</td>
-                        <td className="py-3 px-4">
-                          {editingId === expense.id ? (
-                            <select
-                              value={editCategory}
-                              onChange={(e) => setEditCategory(e.target.value)}
-                              className="px-2 py-1 border border-purple-300 rounded text-xs focus:ring-2 focus:ring-purple-500"
+                      </td>
+                      <td className="py-3 px-4 text-sm text-gray-600">{expense.date}</td>
+                      <td className="py-3 px-4 text-sm text-gray-800 max-w-md truncate">{expense.concept}</td>
+                      <td className="py-3 px-4">
+                        {editingId === expense.id ? (
+                          <select
+                            value={editCategory}
+                            onChange={(e) => setEditCategory(e.target.value)}
+                            className="px-2 py-1 border border-purple-300 rounded text-xs focus:ring-2 focus:ring-purple-500"
+                          >
+                            {Object.keys(categories).sort().map(cat => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="inline-block px-3 py-1 bg-purple-100 text-purple-700 text-xs rounded-full font-medium">
+                            {expense.category}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={`inline-block px-3 py-1 text-xs rounded-full font-medium ${
+                          expense.person === 'Nicolás' 
+                            ? 'bg-pink-100 text-pink-700' 
+                            : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {expense.person}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right font-semibold text-gray-800">
+                        €{expense.amount.toFixed(2)}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        {editingId === expense.id ? (
+                          <div className="flex gap-2 justify-center">
+                            <button 
+                              onClick={() => saveEdit(expense.id)} 
+                              className="p-1 bg-green-600 text-white rounded hover:bg-green-700"
                             >
-                              {Object.keys(categories).sort().map(cat => (
-                                <option key={cat} value={cat}>{cat}</option>
-                              ))}
-                            </select>
-                          ) : (
-                            <span className="inline-block px-3 py-1 bg-purple-100 text-purple-700 text-xs rounded-full font-medium">{expense.category}</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className={`inline-block px-3 py-1 text-xs rounded-full font-medium ${expense.person === 'Nicolás' ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'}`}>{expense.person}</span>
-                        </td>
-                        <td className="py-3 px-4 text-right font-semibold text-gray-800">€{expense.amount.toFixed(2)}</td>
-                        <td className="py-3 px-4 text-center">
-                          {editingId === expense.id ? (
-                            <div className="flex gap-2 justify-center">
-                              <button onClick={() => saveEdit(expense.id)} className="p-1 bg-green-600 text-white rounded hover:bg-green-700"><Save size={16} /></button>
-                              <button onClick={cancelEdit} className="p-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"><X size={16} /></button>
-                            </div>
-                          ) : (
-                            <div className="flex justify-center gap-2">
-                              <button onClick={() => startEdit(expense)} className="p-1 text-purple-600 hover:bg-purple-100 rounded"><Edit2 size={16} /></button>
-                              <button onClick={() => deleteExpense(expense.id)} className="p-1 text-red-600 hover:bg-red-100 rounded"><Trash2 size={16} /></button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                              <Save size={16} />
+                            </button>
+                            <button 
+                              onClick={cancelEdit} 
+                              className="p-1 bg-gray-300 text-gray-700 rounded hover:bg-gray-400"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex justify-center gap-2">
+                            <button 
+                              onClick={() => startEdit(expense)} 
+                              className="p-1 text-purple-600 hover:bg-purple-100 rounded"
+                            >
+                              <Edit2 size={16} />
+                            </button>
+                            <button 
+                              onClick={() => deleteExpense(expense.id)} 
+                              className="p-1 text-red-600 hover:bg-red-100 rounded"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </>
+          </div>
         )}
 
+        {/* Category Manager Modal */}
         {showCategoryManager && (
           <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
             <div className="absolute inset-0 bg-black opacity-40" onClick={() => setShowCategoryManager(false)} />
             <div className="relative bg-white rounded-2xl shadow-xl p-6 max-w-3xl w-full z-10">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-xl font-bold">Administración de Categorías</h3>
-                <button onClick={() => setShowCategoryManager(false)} className="text-gray-500"><X size={18} /></button>
+                <button onClick={() => setShowCategoryManager(false)} className="text-gray-500">
+                  <X size={18} />
+                </button>
               </div>
 
               <p className="text-sm text-gray-600 mb-3">Selecciona categorías para acciones en bloque.</p>
@@ -693,10 +841,16 @@ const ExpenseTrackerApp = () => {
                   {Object.keys(categories).sort().map(cat => (
                     <li key={cat} className="flex items-center justify-between bg-gray-50 p-3 rounded">
                       <div className="flex items-center gap-3">
-                        <input type="checkbox" checked={selectedCategoryKeys.includes(cat)} onChange={() => toggleSelectCategoryKey(cat)} />
+                        <input 
+                          type="checkbox" 
+                          checked={selectedCategoryKeys.includes(cat)} 
+                          onChange={() => toggleSelectCategoryKey(cat)} 
+                        />
                         <span className="font-medium">{cat}</span>
                       </div>
-                      <div className="text-sm text-gray-500">Gastos: {(expenses.filter(e => e.category === cat).length)}</div>
+                      <div className="text-sm text-gray-500">
+                        Gastos: {expenses.filter(e => e.category === cat).length}
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -710,13 +864,19 @@ const ExpenseTrackerApp = () => {
                   onChange={(e) => setNewCategoryName(e.target.value)}
                   className="flex-1 px-3 py-2 border rounded"
                 />
-                <button onClick={addNewCategory} className="px-4 py-2 bg-green-600 text-white rounded">Añadir</button>
+                <button onClick={addNewCategory} className="px-4 py-2 bg-green-600 text-white rounded">
+                  Añadir
+                </button>
               </div>
 
               <div className="flex flex-wrap gap-2 justify-end">
                 <button
                   onClick={renameSelectedCategory}
-                  className={`px-3 py-2 rounded ${selectedCategoryKeys.length === 1 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600 cursor-not-allowed'}`}
+                  className={`px-3 py-2 rounded ${
+                    selectedCategoryKeys.length === 1 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-gray-200 text-gray-600 cursor-not-allowed'
+                  }`}
                   disabled={selectedCategoryKeys.length !== 1}
                 >
                   Renombrar (1)
@@ -728,21 +888,37 @@ const ExpenseTrackerApp = () => {
                   onReassign={reassignSelectedCategories}
                 />
 
-                <button onClick={deleteSelectedCategories} className="px-3 py-2 rounded bg-red-600 text-white">Eliminar seleccionadas</button>
+                <button 
+                  onClick={deleteSelectedCategories} 
+                  className="px-3 py-2 rounded bg-red-600 text-white"
+                >
+                  Eliminar seleccionadas
+                </button>
 
-                <button onClick={() => { setSelectedCategoryKeys([]); setShowCategoryManager(false); }} className="px-3 py-2 rounded bg-gray-300">Cerrar</button>
+                <button 
+                  onClick={() => { 
+                    setSelectedCategoryKeys([]); 
+                    setShowCategoryManager(false); 
+                  }} 
+                  className="px-3 py-2 rounded bg-gray-300"
+                >
+                  Cerrar
+                </button>
               </div>
             </div>
           </div>
         )}
 
+        {/* Manual Expense Modal */}
         {showManualExpenseModal && (
           <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
             <div className="absolute inset-0 bg-black opacity-40" onClick={() => setShowManualExpenseModal(false)} />
             <div className="relative bg-white rounded-2xl shadow-xl p-6 max-w-md w-full z-10">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-xl font-bold">Agregar Gasto Manual</h3>
-                <button onClick={() => setShowManualExpenseModal(false)} className="text-gray-500"><X size={24} /></button>
+                <button onClick={() => setShowManualExpenseModal(false)} className="text-gray-500">
+                  <X size={24} />
+                </button>
               </div>
 
               <div className="space-y-4">
@@ -840,7 +1016,11 @@ function ReassignControl({ categories, selectedKeys, onReassign }) {
   
   return (
     <div className="flex items-center gap-2">
-      <select value={target} onChange={(e) => setTarget(e.target.value)} className="px-3 py-2 border rounded">
+      <select 
+        value={target} 
+        onChange={(e) => setTarget(e.target.value)} 
+        className="px-3 py-2 border rounded"
+      >
         <option value="">Reasignar a...</option>
         {available.map(k => <option key={k} value={k}>{k}</option>)}
       </select>
@@ -859,4 +1039,4 @@ function ReassignControl({ categories, selectedKeys, onReassign }) {
   );
 }
 
-export default ExpenseTrackerApp; 
+export default ExpenseTrackerApp;
