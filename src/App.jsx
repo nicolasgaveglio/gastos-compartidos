@@ -18,38 +18,60 @@ import { Upload, DollarSign, User, Filter, Edit2, Plus, Save, X, Trash2, ListChe
 import * as XLSX from 'xlsx';
 
 const DEFAULT_CATEGORIES = {
-  'Alquiler': ['alquiler', 'rent'],
-  'Electricidad': ['electricidad', 'electric', 'endesa', 'iberdrola'],
-  'Gas': ['gas natural', 'gas'],
-  'Agua': ['agua', 'aguas', 'aigues'],
-  'Celular': ['telefonica moviles', 'movistar', 'vodafone', 'orange', 'yoigo', 'celular'],
-  'Internet': ['telefonica de espana', 'fijo', 'internet', 'fibra'],
+  Alquiler: ['alquiler', 'rent'],
+  Electricidad: ['electricidad', 'electric', 'endesa', 'iberdrola'],
+  Gas: ['gas natural', 'gas'],
+  Agua: ['agua', 'aguas', 'aigues'],
+  Celular: ['telefonica moviles', 'movistar', 'vodafone', 'orange', 'yoigo', 'celular'],
+  Internet: ['telefonica de espana', 'fijo', 'internet', 'fibra'],
   'Muebles/Electrodomésticos/Cocina': ['ikea', 'leroy', 'media markt', 'worten', 'el corte ingles'],
   'Transporte público': ['tmb', 't mobilitat', 'renfe', 'metro', 'bus'],
-  'Bicing': ['bicing'],
+  Bicing: ['bicing'],
   'Uber/taxi': ['uber', 'taxi', 'cabify', 'bolt', 'yego'],
-  'Supermercado': ['mercadona', 'carrefour', 'lidl', 'aldi', 'dia', 'caprabo', 'bonpreu', 'condis', 'supermercat', 'kachafruit', 'greensland', 'cash and carry'],
-  'Suplementos': ['suplemento', 'proteina', 'vitamina', 'myprotein'],
-  'Salidas': ['restaurante', 'bar ', 'popis', 'fornet', 'canigo', 'bonastre', 'bravas', 'foix', 'pedreta', 'pren algo'],
-  'Ropa': ['zara', 'h&m', 'mango', 'pull&bear', 'bershka', 'stradivarius', 'oysho', 'massimo dutti', 'uniqlo'],
-  'Limpieza': ['limpieza', 'detergente', 'lejia'],
+  Supermercado: [
+    'mercadona',
+    'carrefour',
+    'lidl',
+    'aldi',
+    'dia',
+    'caprabo',
+    'bonpreu',
+    'condis',
+    'supermercat',
+    'kachafruit',
+    'greensland',
+    'cash and carry',
+  ],
+  Suplementos: ['suplemento', 'proteina', 'vitamina', 'myprotein'],
+  Salidas: ['restaurante', 'bar ', 'popis', 'fornet', 'canigo', 'bonastre', 'bravas', 'foix', 'pedreta', 'pren algo'],
+  Ropa: ['zara', 'h&m', 'mango', 'pull&bear', 'bershka', 'stradivarius', 'oysho', 'massimo dutti', 'uniqlo'],
+  Limpieza: ['limpieza', 'detergente', 'lejia'],
   'Peluquería/Barbería': ['peluqueria', 'barberia', 'salon', 'corte pelo'],
-  'Educación': ['universidad', 'curso', 'academia', 'escuela', 'nuclio', 'udemy', 'coursera'],
-  'Plataformas (Netflix/Amazon/Adobe/Spotify/Microsoft)': ['netflix', 'amazon prime', 'spotify', 'adobe', 'microsoft', 'disney', 'hbo', 'apple'],
+  Educación: ['universidad', 'curso', 'academia', 'escuela', 'nuclio', 'udemy', 'coursera'],
+  'Plataformas (Netflix/Amazon/Adobe/Spotify/Microsoft)': [
+    'netflix',
+    'amazon prime',
+    'spotify',
+    'adobe',
+    'microsoft',
+    'disney',
+    'hbo',
+    'apple',
+  ],
   'Conciertos/Obras de teatro': ['concierto', 'teatro', 'entradas', 'ticketmaster'],
-  'Deportes': ['decathlon', 'sprinter', 'gimnasio', 'deporte'],
+  Deportes: ['decathlon', 'sprinter', 'gimnasio', 'deporte'],
   'Recreación al aire libre': ['parque', 'excursion', 'montana'],
   'Seguro médico': ['seguro medico', 'axa', 'sanitas', 'mapfre', 'planeta seguros'],
-  'Gimnasio': ['gimnasio', 'gym', 'fitness', 'crossfit'],
+  Gimnasio: ['gimnasio', 'gym', 'fitness', 'crossfit'],
   'Consultas de médicos/odontólogos': ['medico', 'doctor', 'clinica', 'dentista', 'odontologo'],
   'Farmacia/Medicamentos': ['farmacia', 'medicamento', 'parafarmacia'],
-  'Pasajes': ['vueling', 'ryanair', 'iberia', 'renfe', 'bus', 'avion', 'tren'],
-  'Alojamiento': ['booking', 'airbnb', 'hotel', 'hostal'],
-  'Comidas': ['comida', 'meal', 'food'],
-  'Recuerdos': ['souvenir', 'recuerdo', 'regalo'],
+  Pasajes: ['vueling', 'ryanair', 'iberia', 'renfe', 'bus', 'avion', 'tren'],
+  Alojamiento: ['booking', 'airbnb', 'hotel', 'hostal'],
+  Comidas: ['comida', 'meal', 'food'],
+  Recuerdos: ['souvenir', 'recuerdo', 'regalo'],
   'Alquiler de coches': ['rent a car', 'alquiler coche', 'hertz', 'avis', 'europcar'],
-  'Psicóloga': ['psicologa', 'psicologo', 'terapia', 'psicoterapia'],
-  'Otro': [],
+  Psicóloga: ['psicologa', 'psicologo', 'terapia', 'psicoterapia'],
+  Otro: [],
 };
 
 const COLORS = ['#8b5cf6', '#ec4899', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#14b8a6', '#f97316'];
@@ -87,7 +109,7 @@ const ExpenseTrackerApp = () => {
     person: 'Nicolás',
   });
 
-  // --------- AUTH ----------
+  // ---------- AUTH ----------
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -95,7 +117,9 @@ const ExpenseTrackerApp = () => {
       setUser(session?.user ?? null);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, s) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_, s) => {
       setSession(s);
       setUser(s?.user ?? null);
       if (!s) {
@@ -120,7 +144,7 @@ const ExpenseTrackerApp = () => {
     setGroupId(null);
   };
 
-  // --------- GROUP LOADING ----------
+  // ---------- GROUP LOADING ----------
 
   useEffect(() => {
     if (!user) {
@@ -137,7 +161,7 @@ const ExpenseTrackerApp = () => {
           .single();
 
         if (data) {
-          setGroupId(data.id);
+          setGroupId(data.id); // int4
         } else {
           const { data: newGroup, error } = await supabase
             .from('groups')
@@ -162,7 +186,7 @@ const ExpenseTrackerApp = () => {
     loadGroupId();
   }, [user]);
 
-  // --------- DATA LOADING WHEN groupId READY ----------
+  // ---------- DATA LOADING WHEN groupId READY ----------
 
   useEffect(() => {
     if (!groupId) {
@@ -207,40 +231,52 @@ const ExpenseTrackerApp = () => {
     };
 
     loadAll();
-  }, [groupId]);
+  }, [groupId, user]);
 
-  // --------- HELPERS: SAVE ---------
+  // ---------- HELPERS: SAVE ----------
 
   const persistExpenses = async (newExpenses) => {
-    if (!user || !groupId) {
-      console.error('No user or groupId available');
+    if (!user || groupId == null) {
+      console.error('No user or groupId available', { user, groupId });
       alert('Error: No hay grupo configurado todavía. Reintenta en unos segundos.');
       return;
     }
 
+    const parsedGroupId = Number(groupId);
+
     const expensesToUpsert = newExpenses.map((exp) => ({
-      ...exp,
       id: exp.id || crypto.randomUUID(),
-      group_id: groupId,
+      group_id: parsedGroupId,
       user_id: user.id,
+      date: exp.date,
+      concept: exp.concept,
+      amount: Number(exp.amount),
+      category: exp.category,
+      person: exp.person,
       updated_at: new Date().toISOString(),
     }));
 
-    const { error } = await supabase.from('expenses').upsert(expensesToUpsert, { onConflict: 'id' });
+    const { data, error, status, statusText }  = await supabase
+      .from('expenses')
+      .upsert(expensesToUpsert, { onConflict: 'id' });
+
+    console.log('DEBUG upsert response:', { data, error, status, statusText });
 
     if (error) {
       console.error('Error saving expenses:', error);
-      alert(`Error guardando: ${error.message}`);
-    } else {
-      setHasUnsavedChanges(false);
-      const { data } = await supabase
-        .from('expenses')
-        .select('*')
-        .eq('group_id', groupId)
-        .order('date', { ascending: false });
-
-      setExpenses(data || []);
+      alert(`Error guardando: ${error.message || 'sin mensaje'}`);
+      return;
     }
+
+    setHasUnsavedChanges(false);
+
+    const { data: reload } = await supabase
+      .from('expenses')
+      .select('*')
+      .eq('group_id', parsedGroupId)
+      .order('date', { ascending: false });
+
+    setExpenses(reload || []);
   };
 
   const persistCategories = async (updatedCategories) => {
@@ -251,7 +287,7 @@ const ExpenseTrackerApp = () => {
 
     const { error } = await supabase
       .from('categories')
-      .upsert([{ group_id: groupId, categories: updatedCategories }], {
+      .upsert([{ group_id: Number(groupId), categories: updatedCategories }], {
         onConflict: 'group_id',
       });
 
@@ -263,7 +299,7 @@ const ExpenseTrackerApp = () => {
     }
   };
 
-  // --------- LOGIC: CATEGORIZACIÓN, PARSEO, FILTROS ---------
+  // ---------- LOGIC: CATEGORIZACIÓN, PARSEO, FILTROS ----------
 
   const categorizeExpense = (concept) => {
     const conceptLower = concept.toLowerCase();
@@ -434,8 +470,8 @@ const ExpenseTrackerApp = () => {
   };
 
   // filtros y datos para gráficos
-  const getFilteredExpenses = () => {
-    return expenses.filter((exp) => {
+  const getFilteredExpenses = () =>
+    expenses.filter((exp) => {
       if (filter.person !== 'all' && exp.person !== filter.person) return false;
       if (filter.category !== 'all' && exp.category !== filter.category) return false;
       if (filter.month !== 'all') {
@@ -448,7 +484,6 @@ const ExpenseTrackerApp = () => {
       }
       return true;
     });
-  };
 
   const getCategoryData = () => {
     const filtered = getFilteredExpenses();
@@ -587,7 +622,7 @@ const ExpenseTrackerApp = () => {
     setNewCategoryName('');
   };
 
-  // --------- RENDER ----------
+  // ---------- RENDER ----------
 
   if (loading) {
     return (
@@ -648,15 +683,15 @@ const ExpenseTrackerApp = () => {
         <div className="flex flex-wrap gap-3 mb-6 items-center">
           <button
             onClick={openManualExpenseModal}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-purple-600 text-white hover:bg-purple-700 transition-all font-semibold"
+            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-all font-semibold"
           >
             <Plus className="w-4 h-4" />
             Agregar Gasto
           </button>
 
-          <label className="flex items-center gap-2 px-6 py-3 rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition-all font-semibold cursor-pointer">
+          <label className="flex items-center gap-2 px-6 py-3 rounded-xl bg-purple-600 text-white hover:bg-purple-700 transition-all font-semibold cursor-pointer">
             <Upload className="w-4 h-4" />
-            {uploading ? 'Procesando...' : 'Subir Extracto Santander'}
+            {uploading ? 'Procesando...' : 'Subir Extracto'}
             <input
               type="file"
               accept=".xls,.xlsx"
@@ -673,7 +708,7 @@ const ExpenseTrackerApp = () => {
                 await persistCategories(categories);
                 alert('✅ Cambios guardados correctamente');
               }}
-              className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold bg-green-600 text-white hover:bg-green-700 transition-all"
+              className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-all"
             >
               <Save className="w-4 h-4" />
               Guardar Cambios
@@ -682,7 +717,7 @@ const ExpenseTrackerApp = () => {
 
           <button
             onClick={() => setShowCategoryManager(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 ml-auto"
+            className="flex items-center gap-2 px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 ml-auto"
           >
             <ListChecks className="w-4 h-4" />
             Gestionar Categorías
@@ -697,9 +732,7 @@ const ExpenseTrackerApp = () => {
             </div>
             <div>
               <p className="text-xs text-gray-500">Total Gastado</p>
-              <p className="text-2xl font-bold">
-                €{totalExpenses.toFixed(2)}
-              </p>
+              <p className="text-2xl font-bold">€{totalExpenses.toFixed(2)}</p>
             </div>
           </div>
           <div className="bg-white p-4 rounded-xl shadow-sm flex items-center gap-3">
@@ -946,9 +979,7 @@ const ExpenseTrackerApp = () => {
                           )}
                         </td>
                         <td className="p-2">{expense.person}</td>
-                        <td className="p-2 text-right">
-                          €{expense.amount.toFixed(2)}
-                        </td>
+                        <td className="p-2 text-right">€{expense.amount.toFixed(2)}</td>
                         <td className="p-2 text-right">
                           <button
                             onClick={() => deleteExpense(expense.id)}
@@ -971,9 +1002,7 @@ const ExpenseTrackerApp = () => {
           <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
             <div className="bg-white rounded-xl shadow-lg max-w-lg w-full p-5">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-lg">
-                  Administración de Categorías
-                </h3>
+                <h3 className="font-semibold text-lg">Administración de Categorías</h3>
                 <button
                   onClick={() => setShowCategoryManager(false)}
                   className="text-gray-500 hover:text-gray-700"
@@ -993,7 +1022,7 @@ const ExpenseTrackerApp = () => {
                   />
                   <button
                     onClick={addNewCategory}
-                    className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
+                    className="px-3 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700"
                   >
                     Agregar
                   </button>
@@ -1004,10 +1033,7 @@ const ExpenseTrackerApp = () => {
                 {Object.keys(categories)
                   .sort()
                   .map((cat) => (
-                    <label
-                      key={cat}
-                      className="flex items-center gap-2 text-sm py-1"
-                    >
+                    <label key={cat} className="flex items-center gap-2 text-sm py-1">
                       <input
                         type="checkbox"
                         checked={selectedCategoryKeys.includes(cat)}
@@ -1119,7 +1145,7 @@ const ExpenseTrackerApp = () => {
               <div className="flex gap-3">
                 <button
                   onClick={saveManualExpense}
-                  className="flex-1 bg-purple-600 text-white py-3 rounded-xl font-semibold hover:bg-purple-700"
+                  className="flex-1 bg-green-600 text-white py-3 rounded-xl font-semibold hover:bg-green-700"
                 >
                   Guardar
                 </button>
