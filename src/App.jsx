@@ -256,7 +256,7 @@ const ExpenseTrackerApp = () => {
       updated_at: new Date().toISOString(),
     }));
 
-    const { data, error, status, statusText }  = await supabase
+    const { data, error, status, statusText } = await supabase
       .from('expenses')
       .upsert(expensesToUpsert, { onConflict: 'id' });
 
