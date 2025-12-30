@@ -242,7 +242,7 @@ const ExpenseTrackerApp = () => {
       return;
     }
 
-    const parsedGroupId = groupId;
+    const parsedGroupId = Number(groupId);
 
     const expensesToUpsert = newExpenses.map((exp) => ({
       id: exp.id || crypto.randomUUID(),
@@ -287,7 +287,7 @@ const ExpenseTrackerApp = () => {
 
     const { error } = await supabase
       .from('categories')
-      .upsert([{ group_id: groupId, categories: updatedCategories }], {
+      .upsert([{ group_id: Number(groupId), categories: updatedCategories }], {
         onConflict: 'group_id',
       });
 
