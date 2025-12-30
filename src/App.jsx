@@ -242,19 +242,24 @@ const ExpenseTrackerApp = () => {
       return;
     }
 
-    const parsedGroupId = Number(groupId);
+    const parsedGroupId = Number(groupId); // group_id int4
 
-    const expensesToUpsert = newExpenses.map((exp) => ({
-      id: exp.id || crypto.randomUUID(),
-      group_id: parsedGroupId,
-      user_id: user.id,
-      date: exp.date,
-      concept: exp.concept,
-      amount: Number(exp.amount),
-      category: exp.category,
-      person: exp.person,
-      updated_at: new Date().toISOString(),
-    }));
+    const expensesToUpsert = newExpenses.map((exp) => {
+      const safeId =
+        exp.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+      return {
+        id: safeId,
+        group_id: parsedGroupId,
+        user_id: user.id,
+        date: exp.date,
+        concept: exp.concept,
+        amount: Number(exp.amount),
+        category: exp.category,
+        person: exp.person,
+        updated_at: new Date().toISOString(),
+      };
+    });
 
     const { data, error, status, statusText } = await supabase
       .from('expenses')
@@ -285,9 +290,11 @@ const ExpenseTrackerApp = () => {
       return;
     }
 
+    const parsedGroupId = Number(groupId); // int4
+
     const { error } = await supabase
       .from('categories')
-      .upsert([{ group_id: Number(groupId), categories: updatedCategories }], {
+      .upsert([{ group_id: parsedGroupId, categories: updatedCategories }], {
         onConflict: 'group_id',
       });
 
@@ -368,7 +375,9 @@ const ExpenseTrackerApp = () => {
       }
 
       const existingIds = new Set(expenses.map((e) => `${e.date}-${e.concept}-${e.amount}`));
-      const filteredNew = newExpenses.filter((e) => !existingIds.has(`${e.date}-${e.concept}-${e.amount}`));
+      const filteredNew = newExpenses.filter(
+        (e) => !existingIds.has(`${e.date}-${e.concept}-${e.amount}`),
+      );
 
       const updated = [...expenses, ...filteredNew].sort(
         (a, b) =>
@@ -664,7 +673,7 @@ const ExpenseTrackerApp = () => {
         <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
           <div>
             <h1 className="text-3xl md:text-4xl font-bold">
-              Gastos de Nicolás &amp; Connie 💑
+              Gastos de Nicolás & Connie 💑
             </h1>
             <p className="text-gray-600">
               Gestión inteligente de gastos compartidos
@@ -1110,7 +1119,7 @@ const ExpenseTrackerApp = () => {
                 />
                 <input
                   type="number"
-                  placeholder="Monto (€)"
+                  placeholder="Monto"
                   value={manualExpense.amount}
                   onChange={(e) =>
                     setManualExpense({ ...manualExpense, amount: e.target.value })
@@ -1124,11 +1133,13 @@ const ExpenseTrackerApp = () => {
                   }
                   className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500"
                 >
-                  {Object.keys(categories).map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
+                  {Object.keys(categories)
+                    .sort()
+                    .map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
                 </select>
                 <select
                   value={manualExpense.person}
@@ -1142,18 +1153,18 @@ const ExpenseTrackerApp = () => {
                 </select>
               </div>
 
-              <div className="flex gap-3">
-                <button
-                  onClick={saveManualExpense}
-                  className="flex-1 bg-green-600 text-white py-3 rounded-xl font-semibold hover:bg-green-700"
-                >
-                  Guardar
-                </button>
+              <div className="flex justify-end gap-2">
                 <button
                   onClick={() => setShowManualExpenseModal(false)}
-                  className="flex-1 bg-gray-200 py-3 rounded-xl font-semibold hover:bg-gray-300"
+                  className="px-4 py-2 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-50"
                 >
                   Cancelar
+                </button>
+                <button
+                  onClick={saveManualExpense}
+                  className="px-4 py-2 rounded-xl bg-green-600 text-white hover:bg-green-700"
+                >
+                  Guardar
                 </button>
               </div>
             </div>
