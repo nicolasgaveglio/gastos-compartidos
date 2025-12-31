@@ -233,7 +233,7 @@ const ExpenseTrackerApp = () => {
     loadAll();
   }, [groupId, user]);
 
-  // ---------- HELPERS: SAVE ----------
+  // ---------- HELPERS: SAVE (con inserts/updates separados) ----------
 
   const persistExpenses = async (newExpenses) => {
     if (!user || groupId == null) {
@@ -242,46 +242,73 @@ const ExpenseTrackerApp = () => {
       return;
     }
 
-    const parsedGroupId = Number(groupId); // group_id int4
+    const parsedGroupId = Number(groupId); // int4
 
-    const expensesToUpsert = newExpenses.map((exp) => {
-      const safeId =
-        exp.id || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const expensesWithId = newExpenses.filter((exp) => exp.id);
+    const expensesWithoutId = newExpenses.filter((exp) => !exp.id);
 
-      return {
-        id: safeId,
-        group_id: parsedGroupId,
-        user_id: user.id,
-        date: exp.date,
-        concept: exp.concept,
-        amount: Number(exp.amount),
-        category: exp.category,
-        person: exp.person,
-        updated_at: new Date().toISOString(),
-      };
-    });
+    try {
+      // Insertar nuevos (sin id, Supabase genera UUID)
+      if (expensesWithoutId.length > 0) {
+        const newToInsert = expensesWithoutId.map((exp) => ({
+          group_id: parsedGroupId,
+          user_id: user.id,
+          date: exp.date,
+          concept: exp.concept,
+          amount: Number(exp.amount),
+          category: exp.category,
+          person: exp.person,
+        }));
 
-    const { data, error, status, statusText } = await supabase
-      .from('expenses')
-      .upsert(expensesToUpsert, { onConflict: 'id' });
+        const { error: insertError } = await supabase
+          .from('expenses')
+          .insert(newToInsert);
 
-    console.log('DEBUG upsert response:', { data, error, status, statusText });
+        if (insertError) {
+          console.error('Error insertando gastos nuevos:', insertError);
+          alert(`Error guardando gastos nuevos: ${insertError.message}`);
+          return;
+        }
+      }
 
-    if (error) {
-      console.error('Error saving expenses:', error);
-      alert(`Error guardando: ${error.message || 'sin mensaje'}`);
-      return;
+      // Actualizar existentes (con id)
+      if (expensesWithId.length > 0) {
+        const toUpdate = expensesWithId.map((exp) => ({
+          id: exp.id,
+          group_id: parsedGroupId,
+          user_id: user.id,
+          date: exp.date,
+          concept: exp.concept,
+          amount: Number(exp.amount),
+          category: exp.category,
+          person: exp.person,
+          updated_at: new Date().toISOString(),
+        }));
+
+        const { error: updateError } = await supabase
+          .from('expenses')
+          .upsert(toUpdate, { onConflict: 'id' });
+
+        if (updateError) {
+          console.error('Error actualizando gastos:', updateError);
+          alert(`Error actualizando gastos: ${updateError.message}`);
+          return;
+        }
+      }
+
+      setHasUnsavedChanges(false);
+
+      const { data: reload } = await supabase
+        .from('expenses')
+        .select('*')
+        .eq('group_id', parsedGroupId)
+        .order('date', { ascending: false });
+
+      setExpenses(reload || []);
+    } catch (error) {
+      console.error('Error guardando gastos:', error);
+      alert(`Error inesperado: ${error.message}`);
     }
-
-    setHasUnsavedChanges(false);
-
-    const { data: reload } = await supabase
-      .from('expenses')
-      .select('*')
-      .eq('group_id', parsedGroupId)
-      .order('date', { ascending: false });
-
-    setExpenses(reload || []);
   };
 
   const persistCategories = async (updatedCategories) => {
@@ -290,7 +317,7 @@ const ExpenseTrackerApp = () => {
       return;
     }
 
-    const parsedGroupId = Number(groupId); // int4
+    const parsedGroupId = Number(groupId);
 
     const { error } = await supabase
       .from('categories')
@@ -365,7 +392,7 @@ const ExpenseTrackerApp = () => {
         if (parseFloat(row[3]) >= 0) continue;
 
         newExpenses.push({
-          id: `${Date.now()}-${i}`,
+          // sin id: Supabase lo generará
           date: row[0],
           concept,
           amount,
@@ -430,15 +457,46 @@ const ExpenseTrackerApp = () => {
     if (selectedExpenses.length === 0) return;
     if (!window.confirm(`¿Eliminar ${selectedExpenses.length} gasto(s)?`)) return;
 
-    const updated = expenses.filter((exp) => !selectedExpenses.includes(exp.id));
-    await persistExpenses(updated);
-    setSelectedExpenses([]);
+    try {
+      const { error } = await supabase
+        .from('expenses')
+        .delete()
+        .in('id', selectedExpenses);
+
+      if (error) {
+        console.error('Error eliminando gastos:', error);
+        alert(`Error: ${error.message}`);
+        return;
+      }
+
+      setExpenses(expenses.filter((exp) => !selectedExpenses.includes(exp.id)));
+      setSelectedExpenses([]);
+    } catch (error) {
+      console.error('Error:', error);
+      alert(`Error inesperado: ${error.message}`);
+    }
   };
 
   const deleteExpense = async (id) => {
     if (!window.confirm('¿Eliminar este gasto?')) return;
-    const updated = expenses.filter((exp) => exp.id !== id);
-    await persistExpenses(updated);
+
+    try {
+      const { error } = await supabase
+        .from('expenses')
+        .delete()
+        .eq('id', id);
+
+      if (error) {
+        console.error('Error eliminando gasto:', error);
+        alert(`Error: ${error.message}`);
+        return;
+      }
+
+      setExpenses(expenses.filter((exp) => exp.id !== id));
+    } catch (error) {
+      console.error('Error:', error);
+      alert(`Error inesperado: ${error.message}`);
+    }
   };
 
   // gasto manual
@@ -458,24 +516,29 @@ const ExpenseTrackerApp = () => {
     if (!manualExpense.amount || parseFloat(manualExpense.amount) <= 0)
       return alert('Ingresa un monto válido');
 
-    const newExpense = {
-      id: `manual-${Date.now()}`,
-      date: manualExpense.date,
-      concept: manualExpense.concept,
-      amount: parseFloat(manualExpense.amount),
-      category: manualExpense.category,
-      person: manualExpense.person,
-    };
+    try {
+      const newExpense = {
+        // sin id: Supabase lo generará
+        date: manualExpense.date,
+        concept: manualExpense.concept,
+        amount: parseFloat(manualExpense.amount),
+        category: manualExpense.category,
+        person: manualExpense.person,
+      };
 
-    const updated = [newExpense, ...expenses].sort(
-      (a, b) =>
-        new Date(b.date.split('/').reverse().join('-')) -
-        new Date(a.date.split('/').reverse().join('-')),
-    );
+      const updated = [newExpense, ...expenses].sort(
+        (a, b) =>
+          new Date(b.date.split('/').reverse().join('-')) -
+          new Date(a.date.split('/').reverse().join('-')),
+      );
 
-    await persistExpenses(updated);
-    setShowManualExpenseModal(false);
-    alert('✅ Gasto agregado correctamente');
+      await persistExpenses(updated);
+      setShowManualExpenseModal(false);
+      alert('✅ Gasto agregado correctamente');
+    } catch (error) {
+      console.error('Error completo:', error);
+      alert(`Error guardando: ${error.message}`);
+    }
   };
 
   // filtros y datos para gráficos
