@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 import {
   ResponsiveContainer,
@@ -14,9 +14,12 @@ import {
   PieChart,
   Pie,
 } from 'recharts';
-import { Upload, DollarSign, User, Filter, Edit2, Plus, Save, X, Trash2, ListChecks } from 'lucide-react';
+import { Upload, DollarSign, User, Filter, Edit2, Plus, Save, X, Trash2, ListChecks, LogOut } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
+// =====================================================
+// CONFIGURACIÓN
+// =====================================================
 const DEFAULT_CATEGORIES = {
   Alquiler: ['alquiler', 'rent'],
   Electricidad: ['electricidad', 'electric', 'endesa', 'iberdrola'],
@@ -29,18 +32,8 @@ const DEFAULT_CATEGORIES = {
   Bicing: ['bicing'],
   'Uber/taxi': ['uber', 'taxi', 'cabify', 'bolt', 'yego'],
   Supermercado: [
-    'mercadona',
-    'carrefour',
-    'lidl',
-    'aldi',
-    'dia',
-    'caprabo',
-    'bonpreu',
-    'condis',
-    'supermercat',
-    'kachafruit',
-    'greensland',
-    'cash and carry',
+    'mercadona', 'carrefour', 'lidl', 'aldi', 'dia', 'caprabo', 'bonpreu', 
+    'condis', 'supermercat', 'kachafruit', 'greensland', 'cash and carry',
   ],
   Suplementos: ['suplemento', 'proteina', 'vitamina', 'myprotein'],
   Salidas: ['restaurante', 'bar ', 'popis', 'fornet', 'canigo', 'bonastre', 'bravas', 'foix', 'pedreta', 'pren algo'],
@@ -49,14 +42,7 @@ const DEFAULT_CATEGORIES = {
   'Peluquería/Barbería': ['peluqueria', 'barberia', 'salon', 'corte pelo'],
   Educación: ['universidad', 'curso', 'academia', 'escuela', 'nuclio', 'udemy', 'coursera'],
   'Plataformas (Netflix/Amazon/Adobe/Spotify/Microsoft)': [
-    'netflix',
-    'amazon prime',
-    'spotify',
-    'adobe',
-    'microsoft',
-    'disney',
-    'hbo',
-    'apple',
+    'netflix', 'amazon prime', 'spotify', 'adobe', 'microsoft', 'disney', 'hbo', 'apple',
   ],
   'Conciertos/Obras de teatro': ['concierto', 'teatro', 'entradas', 'ticketmaster'],
   Deportes: ['decathlon', 'sprinter', 'gimnasio', 'deporte'],
@@ -76,30 +62,40 @@ const DEFAULT_CATEGORIES = {
 
 const COLORS = ['#8b5cf6', '#ec4899', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#14b8a6', '#f97316'];
 
+// =====================================================
+// COMPONENTE PRINCIPAL
+// =====================================================
 const ExpenseTrackerApp = () => {
-  const [session, setSession] = useState(null);
+  // Estado de autenticación
   const [user, setUser] = useState(null);
   const [groupId, setGroupId] = useState(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
+  // Estado de datos
   const [expenses, setExpenses] = useState([]);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
 
+  // Estado de UI
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
+  // Filtros
   const [filter, setFilter] = useState({ person: 'all', category: 'all', month: 'all' });
 
+  // Edición
   const [editingId, setEditingId] = useState(null);
   const [editCategory, setEditCategory] = useState('');
 
+  // Gestión de categorías
   const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
   const [selectedCategoryKeys, setSelectedCategoryKeys] = useState([]);
 
+  // Selección múltiple
   const [selectedExpenses, setSelectedExpenses] = useState([]);
 
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-
+  // Modal gasto manual
   const [showManualExpenseModal, setShowManualExpenseModal] = useState(false);
   const [manualExpense, setManualExpense] = useState({
     date: new Date().toLocaleDateString('es-ES'),
@@ -109,233 +105,281 @@ const ExpenseTrackerApp = () => {
     person: 'Nicolás',
   });
 
-  // ---------- AUTH ----------
-
+  // =====================================================
+  // AUTENTICACIÓN
+  // =====================================================
   useEffect(() => {
+    // Obtener sesión inicial
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
       setUser(session?.user ?? null);
     });
 
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_, s) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      if (!s) {
+    // Escuchar cambios de autenticación
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth event:', event);
+      setUser(session?.user ?? null);
+      
+      if (!session) {
+        // Limpiar estado cuando se cierra sesión
         setExpenses([]);
         setGroupId(null);
+        setIsInitialized(false);
+        setLoading(false);
       }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  const handleLogin = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: window.location.origin },
-    });
-  };
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setExpenses([]);
-    setGroupId(null);
-  };
-
-  // ---------- GROUP LOADING ----------
-
+  // =====================================================
+  // CARGAR GRUPO DEL USUARIO
+  // =====================================================
   useEffect(() => {
     if (!user) {
       setLoading(false);
       return;
     }
 
-    const loadGroupId = async () => {
+    const loadUserGroup = async () => {
       try {
-        const { data } = await supabase
+        console.log('🔍 Buscando grupo para usuario:', user.id);
+        
+        // Buscar grupo donde el usuario está incluido
+        const { data: groupData, error: groupError } = await supabase
           .from('groups')
-          .select('id')
+          .select('id, name')
           .contains('user_ids', [user.id])
           .single();
 
-        if (data) {
-          setGroupId(data.id); // int4
+        if (groupError && groupError.code !== 'PGRST116') {
+          console.error('Error buscando grupo:', groupError);
+          throw groupError;
+        }
+
+        if (groupData) {
+          console.log('✅ Grupo encontrado:', groupData);
+          setGroupId(groupData.id);
         } else {
-          const { data: newGroup, error } = await supabase
+          // Crear nuevo grupo para el usuario
+          console.log('📝 Creando nuevo grupo...');
+          const { data: newGroup, error: createError } = await supabase
             .from('groups')
             .insert({
-              name: `Grupo ${user.email?.split('@')[0] || 'Compartido'}`,
+              name: `Grupo de ${user.email?.split('@')[0] || 'Usuario'}`,
               user_ids: [user.id],
             })
             .select('id')
             .single();
 
-          if (newGroup && !error) {
-            setGroupId(newGroup.id);
-          } else {
-            console.error('Error creando grupo:', error);
+          if (createError) {
+            console.error('Error creando grupo:', createError);
+            throw createError;
           }
+
+          console.log('✅ Grupo creado:', newGroup);
+          setGroupId(newGroup.id);
         }
       } catch (error) {
-        console.error('Error cargando grupo:', error);
+        console.error('❌ Error en loadUserGroup:', error);
+        alert('Error cargando tu grupo. Por favor recarga la página.');
       }
     };
 
-    loadGroupId();
+    loadUserGroup();
   }, [user]);
 
-  // ---------- DATA LOADING WHEN groupId READY ----------
-
+  // =====================================================
+  // CARGAR DATOS CUANDO groupId ESTÁ LISTO
+  // =====================================================
   useEffect(() => {
-    if (!groupId) {
-      if (user) setLoading(true);
-      return;
-    }
+    if (!user || groupId === null) return;
 
-    const loadExpenses = async () => {
-      const { data, error } = await supabase
-        .from('expenses')
-        .select('*')
-        .eq('group_id', groupId)
-        .order('date', { ascending: false });
-
-      if (error) {
-        console.error('Error loading expenses:', error);
-      } else {
-        setExpenses(data || []);
-      }
-    };
-
-    const loadCategories = async () => {
+    const loadData = async () => {
+      setLoading(true);
+      
       try {
-        const { data } = await supabase
+        // Cargar gastos
+        console.log('📊 Cargando gastos para grupo:', groupId);
+        const { data: expensesData, error: expensesError } = await supabase
+          .from('expenses')
+          .select('*')
+          .eq('group_id', groupId)
+          .order('date', { ascending: false });
+
+        if (expensesError) {
+          console.error('Error cargando gastos:', expensesError);
+        } else {
+          console.log('✅ Gastos cargados:', expensesData?.length || 0);
+          setExpenses(expensesData || []);
+        }
+
+        // Cargar categorías personalizadas
+        const { data: categoriesData } = await supabase
           .from('categories')
           .select('categories')
           .eq('group_id', groupId)
           .single();
 
-        if (data && data.categories) {
-          setCategories({ ...DEFAULT_CATEGORIES, ...data.categories });
+        if (categoriesData?.categories) {
+          setCategories({ ...DEFAULT_CATEGORIES, ...categoriesData.categories });
         }
+
+        setIsInitialized(true);
       } catch (error) {
-        console.error('Error loading categories:', error);
+        console.error('❌ Error cargando datos:', error);
+      } finally {
+        setLoading(false);
       }
     };
 
-    const loadAll = async () => {
-      setLoading(true);
-      await Promise.all([loadExpenses(), loadCategories()]);
-      setLoading(false);
-    };
+    loadData();
+  }, [user, groupId]);
 
-    loadAll();
-  }, [groupId, user]);
+  // =====================================================
+  // FUNCIONES DE AUTENTICACIÓN
+  // =====================================================
+  const handleLogin = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { 
+        redirectTo: window.location.origin + window.location.pathname
+      },
+    });
+    if (error) {
+      console.error('Error en login:', error);
+      alert('Error al iniciar sesión: ' + error.message);
+    }
+  };
 
-  // ---------- HELPERS: SAVE (con inserts/updates separados) ----------
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
 
-  const persistExpenses = async (newExpenses) => {
-    if (!user || groupId == null) {
-      console.error('No user or groupId available', { user, groupId });
-      alert('Error: No hay grupo configurado todavía. Reintenta en unos segundos.');
-      return;
+  // =====================================================
+  // FUNCIONES DE PERSISTENCIA
+  // =====================================================
+  const saveExpenseToDb = async (expense) => {
+    if (!user || groupId === null) {
+      console.error('❌ No hay usuario o grupo');
+      alert('Error: Debes estar logueado y tener un grupo asignado');
+      return null;
     }
 
-    const parsedGroupId = Number(groupId); // int4
+    setSaving(true);
+    
+    try {
+      const expenseData = {
+        group_id: groupId,
+        user_id: user.id,
+        date: expense.date,
+        concept: expense.concept,
+        amount: parseFloat(expense.amount),
+        category: expense.category,
+        person: expense.person,
+      };
 
-    const expensesWithId = newExpenses.filter((exp) => exp.id);
-    const expensesWithoutId = newExpenses.filter((exp) => !exp.id);
+      console.log('💾 Guardando gasto:', expenseData);
+
+      const { data, error } = await supabase
+        .from('expenses')
+        .insert([expenseData])
+        .select()
+        .single();
+
+      if (error) {
+        console.error('❌ Error guardando:', error);
+        alert(`Error guardando gasto: ${error.message}`);
+        return null;
+      }
+
+      console.log('✅ Gasto guardado:', data);
+      return data;
+    } catch (error) {
+      console.error('❌ Error inesperado:', error);
+      alert(`Error inesperado: ${error.message}`);
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateExpenseInDb = async (id, updates) => {
+    if (!user || groupId === null) return null;
+
+    setSaving(true);
+    
+    try {
+      const { data, error } = await supabase
+        .from('expenses')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('group_id', groupId) // Seguridad extra
+        .select()
+        .single();
+
+      if (error) {
+        console.error('❌ Error actualizando:', error);
+        alert(`Error actualizando gasto: ${error.message}`);
+        return null;
+      }
+
+      return data;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteExpenseFromDb = async (id) => {
+    if (!user || groupId === null) return false;
 
     try {
-      // Insertar nuevos (sin id, Supabase genera UUID)
-      if (expensesWithoutId.length > 0) {
-        const newToInsert = expensesWithoutId.map((exp) => ({
-          group_id: parsedGroupId,
-          user_id: user.id,
-          date: exp.date,
-          concept: exp.concept,
-          amount: Number(exp.amount),
-          category: exp.category,
-          person: exp.person,
-        }));
-
-        const { error: insertError } = await supabase
-          .from('expenses')
-          .insert(newToInsert);
-
-        if (insertError) {
-          console.error('Error insertando gastos nuevos:', insertError);
-          alert(`Error guardando gastos nuevos: ${insertError.message}`);
-          return;
-        }
-      }
-
-      // Actualizar existentes (con id)
-      if (expensesWithId.length > 0) {
-        const toUpdate = expensesWithId.map((exp) => ({
-          id: exp.id,
-          group_id: parsedGroupId,
-          user_id: user.id,
-          date: exp.date,
-          concept: exp.concept,
-          amount: Number(exp.amount),
-          category: exp.category,
-          person: exp.person,
-          updated_at: new Date().toISOString(),
-        }));
-
-        const { error: updateError } = await supabase
-          .from('expenses')
-          .upsert(toUpdate, { onConflict: 'id' });
-
-        if (updateError) {
-          console.error('Error actualizando gastos:', updateError);
-          alert(`Error actualizando gastos: ${updateError.message}`);
-          return;
-        }
-      }
-
-      setHasUnsavedChanges(false);
-
-      const { data: reload } = await supabase
+      const { error } = await supabase
         .from('expenses')
-        .select('*')
-        .eq('group_id', parsedGroupId)
-        .order('date', { ascending: false });
+        .delete()
+        .eq('id', id)
+        .eq('group_id', groupId);
 
-      setExpenses(reload || []);
+      if (error) {
+        console.error('❌ Error eliminando:', error);
+        alert(`Error eliminando gasto: ${error.message}`);
+        return false;
+      }
+
+      return true;
     } catch (error) {
-      console.error('Error guardando gastos:', error);
-      alert(`Error inesperado: ${error.message}`);
+      console.error('❌ Error inesperado:', error);
+      return false;
     }
   };
 
-  const persistCategories = async (updatedCategories) => {
-    if (!groupId) {
-      alert('Todavía no hay grupo cargado. Intenta de nuevo en unos segundos.');
-      return;
-    }
+  const saveCategoriestoDb = async (newCategories) => {
+    if (!groupId) return;
 
-    const parsedGroupId = Number(groupId);
+    try {
+      const { error } = await supabase
+        .from('categories')
+        .upsert([{ 
+          group_id: groupId, 
+          categories: newCategories 
+        }], { 
+          onConflict: 'group_id' 
+        });
 
-    const { error } = await supabase
-      .from('categories')
-      .upsert([{ group_id: parsedGroupId, categories: updatedCategories }], {
-        onConflict: 'group_id',
-      });
-
-    if (error) {
-      console.error('Error saving categories:', error);
-    } else {
-      setCategories(updatedCategories);
-      setHasUnsavedChanges(false);
+      if (error) {
+        console.error('Error guardando categorías:', error);
+        alert(`Error guardando categorías: ${error.message}`);
+      } else {
+        setCategories(newCategories);
+      }
+    } catch (error) {
+      console.error('Error inesperado:', error);
     }
   };
 
-  // ---------- LOGIC: CATEGORIZACIÓN, PARSEO, FILTROS ----------
-
-  const categorizeExpense = (concept) => {
+  // =====================================================
+  // FUNCIONES DE CATEGORIZACIÓN
+  // =====================================================
+  const categorizeExpense = useCallback((concept) => {
     const conceptLower = concept.toLowerCase();
     for (const [category, keywords] of Object.entries(categories)) {
       if (category === 'Otro') continue;
@@ -344,56 +388,84 @@ const ExpenseTrackerApp = () => {
       }
     }
     return 'Otro';
-  };
+  }, [categories]);
 
   const detectPerson = (concept, titular) => {
     if (concept.toLowerCase().includes('connie')) return 'Connie';
     return titular || 'Nicolás';
   };
 
+  // =====================================================
+  // MANEJO DE ARCHIVOS EXCEL
+  // =====================================================
   const parseExcel = async (file) => {
+    if (!user || groupId === null) {
+      alert('Error: Debes estar logueado');
+      return;
+    }
+
     setUploading(true);
+    
     try {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data, { cellDates: true, cellNF: true, cellStyles: true });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
+      // Buscar fila de encabezado
       let headerRowIndex = -1;
       for (let i = 0; i < jsonData.length; i++) {
-        if (jsonData[i].includes('FECHA OPERACIÓN') || jsonData[i].includes('CONCEPTO')) {
+        const row = jsonData[i];
+        if (row.some(cell => 
+          String(cell).includes('FECHA') || 
+          String(cell).includes('CONCEPTO') ||
+          String(cell).includes('IMPORTE')
+        )) {
           headerRowIndex = i;
           break;
         }
       }
+
       if (headerRowIndex === -1) {
-        alert('No se pudo encontrar el formato correcto del extracto de Santander');
+        alert('No se pudo encontrar el formato correcto del extracto bancario');
         return;
       }
 
+      // Detectar titular
       let titular = 'Nicolás';
       for (let i = 0; i < headerRowIndex; i++) {
         const row = jsonData[i];
-        if (row.includes('Titular') && i + 1 < jsonData.length) {
-          const nextRow = jsonData[i + 1];
-          if (nextRow[2]) titular = nextRow[2].includes('CONNIE') ? 'Connie' : 'Nicolás';
+        const rowStr = row.join(' ').toUpperCase();
+        if (rowStr.includes('CONNIE')) {
+          titular = 'Connie';
+          break;
         }
       }
 
+      // Procesar filas de gastos
       const newExpenses = [];
       for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
         const row = jsonData[i];
-        if (!row[0] || !row[2] || !row[3]) continue;
+        if (!row[0] || !row[2] || row[3] === undefined) continue;
 
-        const amount = Math.abs(parseFloat(row[3]));
-        if (amount === 0 || isNaN(amount)) continue;
+        const amountRaw = parseFloat(row[3]);
+        if (isNaN(amountRaw) || amountRaw >= 0) continue; // Solo gastos (negativos)
 
+        const amount = Math.abs(amountRaw);
         const concept = String(row[2]);
-        if (parseFloat(row[3]) >= 0) continue;
+        
+        // Formatear fecha
+        let dateStr = row[0];
+        if (dateStr instanceof Date) {
+          dateStr = dateStr.toLocaleDateString('es-ES');
+        } else if (typeof dateStr === 'number') {
+          // Excel serial date
+          const date = new Date((dateStr - 25569) * 86400 * 1000);
+          dateStr = date.toLocaleDateString('es-ES');
+        }
 
         newExpenses.push({
-          // sin id: Supabase lo generará
-          date: row[0],
+          date: dateStr,
           concept,
           amount,
           category: categorizeExpense(concept),
@@ -401,105 +473,77 @@ const ExpenseTrackerApp = () => {
         });
       }
 
-      const existingIds = new Set(expenses.map((e) => `${e.date}-${e.concept}-${e.amount}`));
-      const filteredNew = newExpenses.filter(
-        (e) => !existingIds.has(`${e.date}-${e.concept}-${e.amount}`),
+      if (newExpenses.length === 0) {
+        alert('No se encontraron gastos en el archivo');
+        return;
+      }
+
+      // Filtrar duplicados
+      const existingKeys = new Set(
+        expenses.map(e => `${e.date}-${e.concept}-${e.amount}`)
+      );
+      const uniqueNew = newExpenses.filter(
+        e => !existingKeys.has(`${e.date}-${e.concept}-${e.amount}`)
       );
 
-      const updated = [...expenses, ...filteredNew].sort(
-        (a, b) =>
-          new Date(b.date.split('/').reverse().join('-')) -
-          new Date(a.date.split('/').reverse().join('-')),
-      );
+      if (uniqueNew.length === 0) {
+        alert('Todos los gastos del archivo ya existen');
+        return;
+      }
 
-      await persistExpenses(updated);
-      alert(`✅ ${filteredNew.length} nuevos gastos añadidos`);
+      // Insertar en lote
+      console.log(`💾 Insertando ${uniqueNew.length} gastos nuevos...`);
+      
+      const expensesToInsert = uniqueNew.map(exp => ({
+        group_id: groupId,
+        user_id: user.id,
+        date: exp.date,
+        concept: exp.concept,
+        amount: exp.amount,
+        category: exp.category,
+        person: exp.person,
+      }));
+
+      const { data: insertedData, error } = await supabase
+        .from('expenses')
+        .insert(expensesToInsert)
+        .select();
+
+      if (error) {
+        console.error('Error insertando gastos:', error);
+        alert(`Error guardando gastos: ${error.message}`);
+        return;
+      }
+
+      // Actualizar estado local
+      const updatedExpenses = [...insertedData, ...expenses].sort((a, b) => {
+        const dateA = a.date.split('/').reverse().join('-');
+        const dateB = b.date.split('/').reverse().join('-');
+        return dateB.localeCompare(dateA);
+      });
+
+      setExpenses(updatedExpenses);
+      alert(`✅ ${uniqueNew.length} nuevos gastos añadidos`);
+
     } catch (error) {
       console.error('Error procesando archivo:', error);
-      alert('Error al procesar el archivo. Asegúrate de que sea un extracto válido de Santander.');
+      alert('Error al procesar el archivo. Asegúrate de que sea un extracto válido.');
     } finally {
       setUploading(false);
     }
   };
 
   const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) parseExcel(file);
-  };
-
-  // edición de gasto
-  const startEdit = (expense) => {
-    setEditingId(expense.id);
-    setEditCategory(expense.category);
-  };
-
-  const cancelEdit = () => {
-    setEditingId(null);
-    setEditCategory('');
-  };
-
-  const saveEdit = async (expenseId) => {
-    const updated = expenses.map((exp) =>
-      exp.id === expenseId ? { ...exp, category: editCategory } : exp,
-    );
-    await persistExpenses(updated);
-    setEditingId(null);
-    setEditCategory('');
-  };
-
-  const toggleSelectExpense = (id) => {
-    setSelectedExpenses((prev) =>
-      prev.includes(id) ? prev.filter((eid) => eid !== id) : [...prev, id],
-    );
-  };
-
-  const deleteSelectedExpenses = async () => {
-    if (selectedExpenses.length === 0) return;
-    if (!window.confirm(`¿Eliminar ${selectedExpenses.length} gasto(s)?`)) return;
-
-    try {
-      const { error } = await supabase
-        .from('expenses')
-        .delete()
-        .in('id', selectedExpenses);
-
-      if (error) {
-        console.error('Error eliminando gastos:', error);
-        alert(`Error: ${error.message}`);
-        return;
-      }
-
-      setExpenses(expenses.filter((exp) => !selectedExpenses.includes(exp.id)));
-      setSelectedExpenses([]);
-    } catch (error) {
-      console.error('Error:', error);
-      alert(`Error inesperado: ${error.message}`);
+    const file = e.target.files?.[0];
+    if (file) {
+      parseExcel(file);
+      e.target.value = ''; // Reset input
     }
   };
 
-  const deleteExpense = async (id) => {
-    if (!window.confirm('¿Eliminar este gasto?')) return;
-
-    try {
-      const { error } = await supabase
-        .from('expenses')
-        .delete()
-        .eq('id', id);
-
-      if (error) {
-        console.error('Error eliminando gasto:', error);
-        alert(`Error: ${error.message}`);
-        return;
-      }
-
-      setExpenses(expenses.filter((exp) => exp.id !== id));
-    } catch (error) {
-      console.error('Error:', error);
-      alert(`Error inesperado: ${error.message}`);
-    }
-  };
-
-  // gasto manual
+  // =====================================================
+  // MANEJO DE GASTOS MANUALES
+  // =====================================================
   const openManualExpenseModal = () => {
     setManualExpense({
       date: new Date().toLocaleDateString('es-ES'),
@@ -512,56 +556,215 @@ const ExpenseTrackerApp = () => {
   };
 
   const saveManualExpense = async () => {
-    if (!manualExpense.concept.trim()) return alert('Ingresa una descripción');
-    if (!manualExpense.amount || parseFloat(manualExpense.amount) <= 0)
-      return alert('Ingresa un monto válido');
+    if (!manualExpense.concept.trim()) {
+      alert('Ingresa una descripción');
+      return;
+    }
+    if (!manualExpense.amount || parseFloat(manualExpense.amount) <= 0) {
+      alert('Ingresa un monto válido');
+      return;
+    }
 
-    try {
-      const newExpense = {
-        // sin id: Supabase lo generará
-        date: manualExpense.date,
-        concept: manualExpense.concept,
-        amount: parseFloat(manualExpense.amount),
-        category: manualExpense.category,
-        person: manualExpense.person,
-      };
-
-      const updated = [newExpense, ...expenses].sort(
-        (a, b) =>
-          new Date(b.date.split('/').reverse().join('-')) -
-          new Date(a.date.split('/').reverse().join('-')),
-      );
-
-      await persistExpenses(updated);
+    const savedExpense = await saveExpenseToDb(manualExpense);
+    
+    if (savedExpense) {
+      // Actualizar estado local
+      const updatedExpenses = [savedExpense, ...expenses].sort((a, b) => {
+        const dateA = a.date.split('/').reverse().join('-');
+        const dateB = b.date.split('/').reverse().join('-');
+        return dateB.localeCompare(dateA);
+      });
+      
+      setExpenses(updatedExpenses);
       setShowManualExpenseModal(false);
       alert('✅ Gasto agregado correctamente');
-    } catch (error) {
-      console.error('Error completo:', error);
-      alert(`Error guardando: ${error.message}`);
     }
   };
 
-  // filtros y datos para gráficos
-  const getFilteredExpenses = () =>
-    expenses.filter((exp) => {
+  // =====================================================
+  // EDICIÓN DE GASTOS
+  // =====================================================
+  const startEdit = (expense) => {
+    setEditingId(expense.id);
+    setEditCategory(expense.category);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditCategory('');
+  };
+
+  const saveEdit = async (expenseId) => {
+    const updated = await updateExpenseInDb(expenseId, { category: editCategory });
+    
+    if (updated) {
+      setExpenses(expenses.map(exp => 
+        exp.id === expenseId ? { ...exp, category: editCategory } : exp
+      ));
+    }
+    
+    setEditingId(null);
+    setEditCategory('');
+  };
+
+  // =====================================================
+  // ELIMINACIÓN DE GASTOS
+  // =====================================================
+  const deleteExpense = async (id) => {
+    if (!window.confirm('¿Eliminar este gasto?')) return;
+
+    const success = await deleteExpenseFromDb(id);
+    if (success) {
+      setExpenses(expenses.filter(exp => exp.id !== id));
+    }
+  };
+
+  const deleteSelectedExpenses = async () => {
+    if (selectedExpenses.length === 0) return;
+    if (!window.confirm(`¿Eliminar ${selectedExpenses.length} gasto(s)?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from('expenses')
+        .delete()
+        .in('id', selectedExpenses)
+        .eq('group_id', groupId);
+
+      if (error) {
+        console.error('Error eliminando gastos:', error);
+        alert(`Error: ${error.message}`);
+        return;
+      }
+
+      setExpenses(expenses.filter(exp => !selectedExpenses.includes(exp.id)));
+      setSelectedExpenses([]);
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  };
+
+  const toggleSelectExpense = (id) => {
+    setSelectedExpenses(prev =>
+      prev.includes(id) ? prev.filter(eid => eid !== id) : [...prev, id]
+    );
+  };
+
+  // =====================================================
+  // GESTIÓN DE CATEGORÍAS
+  // =====================================================
+  const toggleSelectCategoryKey = (key) => {
+    setSelectedCategoryKeys(prev =>
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    );
+  };
+
+  const addNewCategory = async () => {
+    const name = newCategoryName.trim();
+    if (!name) {
+      alert('Escribe un nombre válido');
+      return;
+    }
+    if (categories[name]) {
+      alert('Ya existe esa categoría');
+      return;
+    }
+
+    const updated = { ...categories, [name]: [] };
+    await saveCategoriestoDb(updated);
+    setNewCategoryName('');
+  };
+
+  const renameSelectedCategory = async () => {
+    if (selectedCategoryKeys.length !== 1) {
+      alert('Selecciona exactamente 1 categoría para renombrar');
+      return;
+    }
+
+    const oldName = selectedCategoryKeys[0];
+    const newName = window.prompt('Nuevo nombre para la categoría', oldName);
+    
+    if (!newName || newName.trim() === '' || newName === oldName) return;
+
+    // Actualizar categorías
+    const updatedCategories = { ...categories };
+    updatedCategories[newName] = updatedCategories[oldName] || [];
+    delete updatedCategories[oldName];
+
+    // Actualizar gastos con la nueva categoría
+    const updatedExpenses = expenses.map(exp =>
+      exp.category === oldName ? { ...exp, category: newName } : exp
+    );
+
+    // Actualizar en batch en la base de datos
+    const expensesToUpdate = expenses.filter(exp => exp.category === oldName);
+    if (expensesToUpdate.length > 0) {
+      await supabase
+        .from('expenses')
+        .update({ category: newName })
+        .in('id', expensesToUpdate.map(e => e.id));
+    }
+
+    await saveCategoriestoDb(updatedCategories);
+    setExpenses(updatedExpenses);
+    setSelectedCategoryKeys([]);
+    setShowCategoryManager(false);
+  };
+
+  const deleteSelectedCategories = async () => {
+    if (selectedCategoryKeys.length === 0) {
+      alert('Selecciona al menos una categoría para eliminar');
+      return;
+    }
+    
+    if (!window.confirm(`¿Eliminar ${selectedCategoryKeys.length} categoría(s)? Los gastos pasarán a "Otro".`)) {
+      return;
+    }
+
+    const updatedCategories = { ...categories };
+    selectedCategoryKeys.forEach(k => delete updatedCategories[k]);
+
+    // Actualizar gastos
+    const expensesToUpdate = expenses.filter(exp => selectedCategoryKeys.includes(exp.category));
+    if (expensesToUpdate.length > 0) {
+      await supabase
+        .from('expenses')
+        .update({ category: 'Otro' })
+        .in('id', expensesToUpdate.map(e => e.id));
+    }
+
+    const updatedExpenses = expenses.map(exp =>
+      selectedCategoryKeys.includes(exp.category) ? { ...exp, category: 'Otro' } : exp
+    );
+
+    await saveCategoriestoDb(updatedCategories);
+    setExpenses(updatedExpenses);
+    setSelectedCategoryKeys([]);
+    setShowCategoryManager(false);
+  };
+
+  // =====================================================
+  // FILTROS Y DATOS PARA GRÁFICOS
+  // =====================================================
+  const getFilteredExpenses = useCallback(() => {
+    return expenses.filter(exp => {
       if (filter.person !== 'all' && exp.person !== filter.person) return false;
       if (filter.category !== 'all' && exp.category !== filter.category) return false;
       if (filter.month !== 'all') {
-        const expDate = new Date(exp.date.split('/').reverse().join('-'));
-        const expMonth = `${expDate.getFullYear()}-${String(expDate.getMonth() + 1).padStart(
-          2,
-          '0',
-        )}`;
-        if (expMonth !== filter.month) return false;
+        const parts = exp.date.split('/');
+        if (parts.length === 3) {
+          const expMonth = `${parts[2]}-${parts[1].padStart(2, '0')}`;
+          if (expMonth !== filter.month) return false;
+        }
       }
       return true;
     });
+  }, [expenses, filter]);
 
   const getCategoryData = () => {
     const filtered = getFilteredExpenses();
     const categoryTotals = {};
-    filtered.forEach((exp) => {
-      categoryTotals[exp.category] = (categoryTotals[exp.category] || 0) + exp.amount;
+    filtered.forEach(exp => {
+      categoryTotals[exp.category] = (categoryTotals[exp.category] || 0) + Number(exp.amount);
     });
     return Object.entries(categoryTotals)
       .map(([name, value]) => ({ name, value: parseFloat(value.toFixed(2)) }))
@@ -571,158 +774,97 @@ const ExpenseTrackerApp = () => {
 
   const getMonthlyData = () => {
     const monthlyTotals = {};
-    expenses.forEach((exp) => {
+    expenses.forEach(exp => {
       if (filter.person !== 'all' && exp.person !== filter.person) return;
       if (filter.category !== 'all' && exp.category !== filter.category) return;
 
-      const date = new Date(exp.date.split('/').reverse().join('-'));
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      monthlyTotals[monthKey] = (monthlyTotals[monthKey] || 0) + exp.amount;
+      const parts = exp.date.split('/');
+      if (parts.length === 3) {
+        const monthKey = `${parts[2]}-${parts[1].padStart(2, '0')}`;
+        monthlyTotals[monthKey] = (monthlyTotals[monthKey] || 0) + Number(exp.amount);
+      }
     });
 
     return Object.entries(monthlyTotals)
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([month, total]) => {
         const [year, m] = month.split('-');
-        const monthName = new Date(year, m - 1).toLocaleDateString('es-ES', { month: 'short' });
+        const monthName = new Date(year, parseInt(m) - 1).toLocaleDateString('es-ES', { month: 'short' });
         return { month: `${monthName} ${year}`, total: parseFloat(total.toFixed(2)) };
       });
   };
 
   const getPersonData = () => {
     const filtered = getFilteredExpenses();
-    const personTotals = { Nicolás: 0, Connie: 0 };
-    filtered.forEach((exp) => {
-      personTotals[exp.person] = (personTotals[exp.person] || 0) + exp.amount;
+    const personTotals = { 'Nicolás': 0, 'Connie': 0 };
+    filtered.forEach(exp => {
+      if (personTotals.hasOwnProperty(exp.person)) {
+        personTotals[exp.person] += Number(exp.amount);
+      }
     });
     return [
-      { name: 'Nicolás', value: parseFloat((personTotals['Nicolás'] || 0).toFixed(2)) },
-      { name: 'Connie', value: parseFloat((personTotals['Connie'] || 0).toFixed(2)) },
+      { name: 'Nicolás', value: parseFloat(personTotals['Nicolás'].toFixed(2)) },
+      { name: 'Connie', value: parseFloat(personTotals['Connie'].toFixed(2)) },
     ];
   };
 
-  const getTotalExpenses = () =>
-    getFilteredExpenses().reduce((sum, e) => sum + e.amount, 0);
+  const getTotalExpenses = () => {
+    return getFilteredExpenses().reduce((sum, e) => sum + Number(e.amount), 0);
+  };
 
   const getAvailableMonths = () => {
     const months = new Set();
-    expenses.forEach((exp) => {
-      const date = new Date(exp.date.split('/').reverse().join('-'));
-      months.add(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`);
+    expenses.forEach(exp => {
+      const parts = exp.date.split('/');
+      if (parts.length === 3) {
+        months.add(`${parts[2]}-${parts[1].padStart(2, '0')}`);
+      }
     });
     return Array.from(months).sort().reverse();
   };
 
-  // categorías
-  const toggleSelectCategoryKey = (key) => {
-    setSelectedCategoryKeys((prev) =>
-      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
-    );
-  };
-
-  const deleteSelectedCategories = async () => {
-    if (selectedCategoryKeys.length === 0)
-      return alert('Selecciona al menos una categoría para eliminar.');
-    if (
-      !window.confirm(
-        `Eliminar ${selectedCategoryKeys.length} categoría(s)? Los gastos pasarán a "Otro".`,
-      )
-    )
-      return;
-
-    const updatedCategories = { ...categories };
-    selectedCategoryKeys.forEach((k) => delete updatedCategories[k]);
-
-    const updatedExpenses = expenses.map((exp) =>
-      selectedCategoryKeys.includes(exp.category) ? { ...exp, category: 'Otro' } : exp,
-    );
-
-    await persistExpenses(updatedExpenses);
-    await persistCategories(updatedCategories);
-    setSelectedCategoryKeys([]);
-    setShowCategoryManager(false);
-  };
-
-  const reassignSelectedCategories = async (targetCategory) => {
-    if (selectedCategoryKeys.length === 0)
-      return alert('Selecciona al menos una categoría para reasignar.');
-    if (!targetCategory || !categories[targetCategory])
-      return alert('Selecciona una categoría destino válida.');
-
-    const updatedExpenses = expenses.map((exp) =>
-      selectedCategoryKeys.includes(exp.category) ? { ...exp, category: targetCategory } : exp,
-    );
-
-    const updatedCategories = { ...categories };
-    selectedCategoryKeys.forEach((k) => delete updatedCategories[k]);
-
-    await persistExpenses(updatedExpenses);
-    await persistCategories(updatedCategories);
-    setSelectedCategoryKeys([]);
-    setShowCategoryManager(false);
-  };
-
-  const renameSelectedCategory = async () => {
-    if (selectedCategoryKeys.length !== 1)
-      return alert('Selecciona exactamente 1 categoría para renombrar.');
-
-    const oldName = selectedCategoryKeys[0];
-    const newName = window.prompt('Nuevo nombre para la categoría', oldName);
-    if (!newName || newName.trim() === '' || newName === oldName) return;
-
-    const updatedCategories = { ...categories };
-    updatedCategories[newName] = updatedCategories[oldName] || [];
-    delete updatedCategories[oldName];
-
-    const updatedExpenses = expenses.map((exp) =>
-      exp.category === oldName ? { ...exp, category: newName } : exp,
-    );
-
-    await persistCategories(updatedCategories);
-    await persistExpenses(updatedExpenses);
-    setSelectedCategoryKeys([]);
-    setShowCategoryManager(false);
-  };
-
-  const addNewCategory = async () => {
-    const name = newCategoryName.trim();
-    if (!name) return alert('Escribe un nombre válido.');
-    if (categories[name]) return alert('Ya existe esa categoría.');
-
-    const updated = { ...categories, [name]: [] };
-    await persistCategories(updated);
-    setNewCategoryName('');
-  };
-
-  // ---------- RENDER ----------
-
+  // =====================================================
+  // RENDER: PANTALLA DE CARGA
+  // =====================================================
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <p className="text-gray-600 text-lg">Cargando gastos...</p>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-purple-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600 font-medium">Cargando gastos...</p>
+        </div>
       </div>
     );
   }
 
+  // =====================================================
+  // RENDER: PANTALLA DE LOGIN
+  // =====================================================
   if (!user) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-4">
-        <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2 text-center">
-          Gastos Compartidos 💑
-        </h1>
-        <p className="text-gray-600 mb-8 text-center">
-          Inicia sesión para gestionar tus gastos
-        </p>
-        <button
-          onClick={handleLogin}
-          className="flex items-center gap-2 px-8 py-4 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-all font-semibold text-lg"
-        >
-          <User className="w-5 h-5" /> Login with Google
-        </button>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 px-4">
+        <div className="bg-white rounded-3xl shadow-xl p-8 max-w-md w-full border border-purple-100">
+          <h1 className="text-3xl md:text-4xl font-bold text-center bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-2">
+            Gastos Compartidos 💑
+          </h1>
+          <p className="text-gray-600 mb-8 text-center">
+            Inicia sesión para gestionar tus gastos
+          </p>
+          <button
+            onClick={handleLogin}
+            className="w-full flex items-center justify-center gap-2 px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:shadow-lg transition-all font-semibold text-lg"
+          >
+            <User className="w-5 h-5" /> 
+            Iniciar sesión con Google
+          </button>
+        </div>
       </div>
     );
   }
 
+  // =====================================================
+  // RENDER: APLICACIÓN PRINCIPAL
+  // =====================================================
   const categoryData = getCategoryData();
   const personData = getPersonData();
   const monthlyData = getMonthlyData();
@@ -730,119 +872,122 @@ const ExpenseTrackerApp = () => {
   const filteredExpenses = getFilteredExpenses();
 
   return (
-    <div className="min-h-screen bg-slate-50 text-gray-900">
-      <div className="max-w-6xl mx-auto px-4 py-6 md:py-10">
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 text-gray-900">
+      <div className="max-w-7xl mx-auto px-4 py-6 md:py-10">
+        
         {/* Header */}
-        <header className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl md:text-4xl font-bold">
-              Gastos de Nicolás & Connie 💑
-            </h1>
-            <p className="text-gray-600">
-              Gestión inteligente de gastos compartidos
-            </p>
+        <header className="bg-white rounded-3xl shadow-xl p-6 md:p-8 mb-8 border border-purple-100">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                Gastos de Nicolás & Connie 💑
+              </h1>
+              <p className="text-gray-600 mt-1">
+                Gestión inteligente de gastos compartidos
+              </p>
+              <p className="text-xs text-gray-400 mt-1">
+                {user.email}
+              </p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 px-6 py-3 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all font-semibold"
+            >
+              <LogOut className="w-4 h-4" />
+              Cerrar sesión
+            </button>
           </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all font-semibold"
-          >
-            <X className="w-4 h-4" />
-            Logout {user.email?.split('@')[0]}
-          </button>
         </header>
 
         {/* Acciones */}
         <div className="flex flex-wrap gap-3 mb-6 items-center">
           <button
             onClick={openManualExpenseModal}
-            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-green-600 text-white hover:bg-green-700 transition-all font-semibold"
+            disabled={saving || !isInitialized}
+            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg transition-all font-semibold disabled:opacity-50"
           >
             <Plus className="w-4 h-4" />
             Agregar Gasto
           </button>
 
-          <label className="flex items-center gap-2 px-6 py-3 rounded-xl bg-purple-600 text-white hover:bg-purple-700 transition-all font-semibold cursor-pointer">
-            <Upload className="w-4 h-4" />
-            {uploading ? 'Procesando...' : 'Subir Extracto'}
+          <label className="relative cursor-pointer">
             <input
               type="file"
               accept=".xls,.xlsx"
               onChange={handleFileUpload}
               className="hidden"
-              disabled={uploading}
+              disabled={uploading || !isInitialized}
             />
+            <div className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all ${
+              uploading || !isInitialized
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg'
+            }`}>
+              <Upload className="w-4 h-4" />
+              {uploading ? 'Procesando...' : 'Subir Extracto'}
+            </div>
           </label>
-
-          {hasUnsavedChanges && (
-            <button
-              onClick={async () => {
-                await persistExpenses(expenses);
-                await persistCategories(categories);
-                alert('✅ Cambios guardados correctamente');
-              }}
-              className="flex items-center gap-2 px-6 py-3 rounded-xl font-semibold bg-blue-600 text-white hover:bg-blue-700 transition-all"
-            >
-              <Save className="w-4 h-4" />
-              Guardar Cambios
-            </button>
-          )}
 
           <button
             onClick={() => setShowCategoryManager(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 ml-auto"
+            className="flex items-center gap-2 px-4 py-3 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 transition-all font-medium ml-auto"
           >
             <ListChecks className="w-4 h-4" />
             Gestionar Categorías
           </button>
         </div>
 
-        {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <div className="bg-white p-4 rounded-xl shadow-sm flex items-center gap-3">
-            <div className="p-3 rounded-full bg-purple-100 text-purple-600">
-              <DollarSign className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">Total Gastado</p>
-              <p className="text-2xl font-bold">€{totalExpenses.toFixed(2)}</p>
-            </div>
-          </div>
-          <div className="bg-white p-4 rounded-xl shadow-sm flex items-center gap-3">
-            <div className="p-3 rounded-full bg-blue-100 text-blue-600">
-              <User className="w-6 h-6" />
-            </div>
-            <div>
-              <p className="text-xs text-gray-500">Nicolás</p>
-              <p className="text-xl font-bold">
-                €{(personData[0]?.value || 0).toFixed(2)}
-              </p>
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mb-8">
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm font-medium">Total Gastado</p>
+                <p className="text-3xl font-bold text-purple-600 mt-1">€{totalExpenses.toFixed(2)}</p>
+              </div>
+              <div className="bg-purple-100 p-3 rounded-xl">
+                <DollarSign className="text-purple-600 w-8 h-8" />
+              </div>
             </div>
           </div>
-          <div className="bg-white p-4 rounded-xl shadow-sm flex items-center gap-3">
-            <div className="p-3 rounded-full bg-pink-100 text-pink-600">
-              <User className="w-6 h-6" />
+
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-pink-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm font-medium">Nicolás</p>
+                <p className="text-3xl font-bold text-pink-600 mt-1">€{(personData[0]?.value || 0).toFixed(2)}</p>
+              </div>
+              <div className="bg-pink-100 p-3 rounded-xl">
+                <User className="text-pink-600 w-8 h-8" />
+              </div>
             </div>
-            <div>
-              <p className="text-xs text-gray-500">Connie</p>
-              <p className="text-xl font-bold">
-                €{(personData[1]?.value || 0).toFixed(2)}
-              </p>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-blue-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm font-medium">Connie</p>
+                <p className="text-3xl font-bold text-blue-600 mt-1">€{(personData[1]?.value || 0).toFixed(2)}</p>
+              </div>
+              <div className="bg-blue-100 p-3 rounded-xl">
+                <User className="text-blue-600 w-8 h-8" />
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-          <div className="bg-white p-4 rounded-xl shadow-sm">
-            <h3 className="font-semibold mb-2">Top 5 Categorías</h3>
+        {/* Gráficos */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100">
+            <h3 className="font-bold mb-4 text-gray-800">Top 5 Categorías</h3>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={categoryData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" />
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" height={60} />
                   <YAxis />
                   <Tooltip formatter={(value) => [`€${value.toFixed(2)}`, '']} />
-                  <Bar dataKey="value">
+                  <Bar dataKey="value" radius={[8, 8, 0, 0]}>
                     {categoryData.map((entry, index) => (
                       <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
                     ))}
@@ -852,29 +997,23 @@ const ExpenseTrackerApp = () => {
             </div>
           </div>
 
-          <div className="bg-white p-4 rounded-xl shadow-sm">
-            <h3 className="font-semibold mb-2">Gastos Anuales (mensual)</h3>
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-pink-100">
+            <h3 className="font-bold mb-4 text-gray-800">Gastos Mensuales</h3>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={monthlyData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="month" />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" height={60} />
                   <YAxis />
                   <Tooltip formatter={(value) => [`€${value.toFixed(2)}`, '']} />
-                  <Line
-                    type="monotone"
-                    dataKey="total"
-                    stroke="#8b5cf6"
-                    strokeWidth={2}
-                    dot={{ r: 3 }}
-                  />
+                  <Line type="monotone" dataKey="total" stroke="#8b5cf6" strokeWidth={3} dot={{ r: 4 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          <div className="bg-white p-4 rounded-xl shadow-sm">
-            <h3 className="font-semibold mb-2">Gastos por Persona</h3>
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-blue-100">
+            <h3 className="font-bold mb-4 text-gray-800">Gastos por Persona</h3>
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -883,8 +1022,8 @@ const ExpenseTrackerApp = () => {
                     data={personData}
                     cx="50%"
                     cy="50%"
-                    outerRadius={70}
-                    label
+                    outerRadius={80}
+                    label={({ name, value }) => `${name}: €${value}`}
                   >
                     {personData.map((entry, index) => (
                       <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
@@ -898,15 +1037,15 @@ const ExpenseTrackerApp = () => {
         </div>
 
         {/* Filtros */}
-        <div className="bg-white p-4 rounded-xl shadow-sm mb-6">
-          <h3 className="font-semibold mb-3 flex items-center gap-2">
-            <Filter className="w-4 h-4" /> Filtros
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-8 border border-purple-100">
+          <h3 className="font-bold mb-4 flex items-center gap-2 text-gray-800">
+            <Filter className="w-5 h-5 text-purple-600" /> Filtros
           </h3>
-          <div className="flex flex-wrap gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <select
               value={filter.person}
               onChange={(e) => setFilter({ ...filter, person: e.target.value })}
-              className="px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              className="px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
             >
               <option value="all">👥 Ambos</option>
               <option value="Nicolás">👤 Nicolás</option>
@@ -916,59 +1055,56 @@ const ExpenseTrackerApp = () => {
             <select
               value={filter.category}
               onChange={(e) => setFilter({ ...filter, category: e.target.value })}
-              className="px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              className="px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
             >
               <option value="all">📂 Todas las categorías</option>
-              {Object.keys(categories)
-                .sort()
-                .map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
+              {Object.keys(categories).sort().map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
             </select>
 
             <select
               value={filter.month}
               onChange={(e) => setFilter({ ...filter, month: e.target.value })}
-              className="px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              className="px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
             >
               <option value="all">📅 Todos los meses</option>
               {getAvailableMonths().map((month) => {
-                const [year, monthNum] = month.split('-');
-                const monthName = new Date(year, monthNum - 1).toLocaleDateString('es-ES', {
+                const [year, m] = month.split('-');
+                const monthName = new Date(year, parseInt(m) - 1).toLocaleDateString('es-ES', {
                   month: 'long',
                   year: 'numeric',
                 });
                 return (
-                  <option key={month} value={month}>
-                    {monthName}
-                  </option>
+                  <option key={month} value={month}>{monthName}</option>
                 );
               })}
             </select>
           </div>
         </div>
 
-        {/* Lista de gastos */}
-        <div className="bg-white p-4 rounded-xl shadow-sm">
+        {/* Lista de Gastos */}
+        <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100">
           {expenses.length === 0 ? (
-            <p className="text-center text-gray-500 py-6">
-              Subí tu extracto de Santander para comenzar
-            </p>
+            <div className="text-center py-12">
+              <Upload className="mx-auto text-gray-300 mb-4 w-16 h-16" />
+              <p className="text-gray-500 text-lg">
+                Sube tu extracto bancario o agrega un gasto manual para comenzar
+              </p>
+            </div>
           ) : (
             <>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-gray-800">
                   Lista de Gastos ({filteredExpenses.length})
                 </h3>
                 {selectedExpenses.length > 0 && (
                   <button
                     onClick={deleteSelectedExpenses}
-                    className="flex items-center gap-1 text-red-600 hover:text-red-700 text-sm"
+                    className="flex items-center gap-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 text-sm"
                   >
                     <Trash2 className="w-4 h-4" />
-                    Eliminar seleccionados
+                    Eliminar ({selectedExpenses.length})
                   </button>
                 )}
               </div>
@@ -976,42 +1112,37 @@ const ExpenseTrackerApp = () => {
               <div className="overflow-x-auto">
                 <table className="min-w-full text-sm">
                   <thead>
-                    <tr className="border-b bg-gray-50">
-                      <th className="p-2 text-left">
+                    <tr className="border-b-2 border-purple-100">
+                      <th className="p-3 text-left">
                         <input
                           type="checkbox"
-                          checked={
-                            selectedExpenses.length > 0 &&
-                            selectedExpenses.length === filteredExpenses.length
-                          }
-                          onChange={(e) =>
-                            setSelectedExpenses(
-                              e.target.checked ? filteredExpenses.map((exp) => exp.id) : [],
-                            )
-                          }
+                          checked={selectedExpenses.length > 0 && selectedExpenses.length === filteredExpenses.length}
+                          onChange={(e) => setSelectedExpenses(
+                            e.target.checked ? filteredExpenses.map((exp) => exp.id) : []
+                          )}
                         />
                       </th>
-                      <th className="p-2 text-left">Fecha</th>
-                      <th className="p-2 text-left">Concepto</th>
-                      <th className="p-2 text-left">Categoría</th>
-                      <th className="p-2 text-left">Persona</th>
-                      <th className="p-2 text-right">Monto</th>
-                      <th className="p-2 text-right">Acción</th>
+                      <th className="p-3 text-left font-semibold text-gray-700">Fecha</th>
+                      <th className="p-3 text-left font-semibold text-gray-700">Concepto</th>
+                      <th className="p-3 text-left font-semibold text-gray-700">Categoría</th>
+                      <th className="p-3 text-left font-semibold text-gray-700">Persona</th>
+                      <th className="p-3 text-right font-semibold text-gray-700">Monto</th>
+                      <th className="p-3 text-center font-semibold text-gray-700">Acción</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredExpenses.map((expense) => (
-                      <tr key={expense.id} className="border-b hover:bg-gray-50">
-                        <td className="p-2">
+                      <tr key={expense.id} className="border-b border-gray-100 hover:bg-purple-50 transition-colors">
+                        <td className="p-3">
                           <input
                             type="checkbox"
                             checked={selectedExpenses.includes(expense.id)}
                             onChange={() => toggleSelectExpense(expense.id)}
                           />
                         </td>
-                        <td className="p-2">{expense.date}</td>
-                        <td className="p-2">{expense.concept}</td>
-                        <td className="p-2">
+                        <td className="p-3 text-gray-600">{expense.date}</td>
+                        <td className="p-3 text-gray-800 max-w-xs truncate">{expense.concept}</td>
+                        <td className="p-3">
                           {editingId === expense.id ? (
                             <div className="flex items-center gap-1">
                               <select
@@ -1019,17 +1150,13 @@ const ExpenseTrackerApp = () => {
                                 onChange={(e) => setEditCategory(e.target.value)}
                                 className="px-2 py-1 border border-purple-300 rounded text-xs focus:ring-2 focus:ring-purple-500"
                               >
-                                {Object.keys(categories)
-                                  .sort()
-                                  .map((cat) => (
-                                    <option key={cat} value={cat}>
-                                      {cat}
-                                    </option>
-                                  ))}
+                                {Object.keys(categories).sort().map((cat) => (
+                                  <option key={cat} value={cat}>{cat}</option>
+                                ))}
                               </select>
                               <button
                                 onClick={() => saveEdit(expense.id)}
-                                className="p-1 bg-green-600 text-white rounded hover:bg-green-700"
+                                className="p-1 bg-green-500 text-white rounded hover:bg-green-600"
                               >
                                 <Save className="w-3 h-3" />
                               </button>
@@ -1041,24 +1168,40 @@ const ExpenseTrackerApp = () => {
                               </button>
                             </div>
                           ) : (
-                            <button
-                              onClick={() => startEdit(expense)}
-                              className="inline-flex items-center gap-1 text-purple-600 hover:underline text-xs"
-                            >
-                              <Edit2 className="w-3 h-3" />
+                            <span className="inline-block px-3 py-1 bg-purple-100 text-purple-700 text-xs rounded-full font-medium">
                               {expense.category}
-                            </button>
+                            </span>
                           )}
                         </td>
-                        <td className="p-2">{expense.person}</td>
-                        <td className="p-2 text-right">€{expense.amount.toFixed(2)}</td>
-                        <td className="p-2 text-right">
-                          <button
-                            onClick={() => deleteExpense(expense.id)}
-                            className="p-1 text-red-600 hover:bg-red-50 rounded"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                        <td className="p-3">
+                          <span className={`inline-block px-3 py-1 text-xs rounded-full font-medium ${
+                            expense.person === 'Nicolás' 
+                              ? 'bg-pink-100 text-pink-700' 
+                              : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            {expense.person}
+                          </span>
+                        </td>
+                        <td className="p-3 text-right font-semibold text-gray-800">
+                          €{Number(expense.amount).toFixed(2)}
+                        </td>
+                        <td className="p-3 text-center">
+                          {editingId !== expense.id && (
+                            <div className="flex justify-center gap-1">
+                              <button
+                                onClick={() => startEdit(expense)}
+                                className="p-1.5 text-purple-600 hover:bg-purple-100 rounded"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => deleteExpense(expense.id)}
+                                className="p-1.5 text-red-600 hover:bg-red-100 rounded"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -1069,22 +1212,26 @@ const ExpenseTrackerApp = () => {
           )}
         </div>
 
-        {/* Modal Gestión categorías */}
+        {/* Modal: Gestión de Categorías */}
         {showCategoryManager && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-lg max-w-lg w-full p-5">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-lg">Administración de Categorías</h3>
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-xl text-gray-800">Administración de Categorías</h3>
                 <button
-                  onClick={() => setShowCategoryManager(false)}
+                  onClick={() => {
+                    setShowCategoryManager(false);
+                    setSelectedCategoryKeys([]);
+                  }}
                   className="text-gray-500 hover:text-gray-700"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-6 h-6" />
                 </button>
               </div>
 
+              {/* Nueva categoría */}
               <div className="mb-4">
-                <h4 className="font-semibold mb-2 text-sm">Nueva Categoría</h4>
+                <h4 className="font-semibold mb-2 text-sm text-gray-700">Nueva Categoría</h4>
                 <div className="flex gap-2">
                   <input
                     value={newCategoryName}
@@ -1094,49 +1241,51 @@ const ExpenseTrackerApp = () => {
                   />
                   <button
                     onClick={addNewCategory}
-                    className="px-3 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700"
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                   >
                     Agregar
                   </button>
                 </div>
               </div>
 
-              <div className="mb-3 max-h-52 overflow-y-auto border rounded-lg p-2">
-                {Object.keys(categories)
-                  .sort()
-                  .map((cat) => (
-                    <label key={cat} className="flex items-center gap-2 text-sm py-1">
-                      <input
-                        type="checkbox"
-                        checked={selectedCategoryKeys.includes(cat)}
-                        onChange={() => toggleSelectCategoryKey(cat)}
-                      />
-                      <span>{cat}</span>
-                    </label>
-                  ))}
+              {/* Lista de categorías */}
+              <div className="mb-4 max-h-60 overflow-y-auto border rounded-lg">
+                {Object.keys(categories).sort().map((cat) => (
+                  <label key={cat} className="flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0">
+                    <input
+                      type="checkbox"
+                      checked={selectedCategoryKeys.includes(cat)}
+                      onChange={() => toggleSelectCategoryKey(cat)}
+                    />
+                    <span className="flex-1 font-medium">{cat}</span>
+                    <span className="text-sm text-gray-500">
+                      {expenses.filter(e => e.category === cat).length} gastos
+                    </span>
+                  </label>
+                ))}
               </div>
 
+              {/* Acciones */}
               <div className="flex flex-wrap gap-2 justify-end">
                 <button
                   onClick={renameSelectedCategory}
-                  className="px-3 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+                  disabled={selectedCategoryKeys.length !== 1}
+                  className={`px-4 py-2 rounded-lg ${
+                    selectedCategoryKeys.length === 1
+                      ? 'bg-blue-600 text-white hover:bg-blue-700'
+                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  }`}
                 >
                   Renombrar
                 </button>
                 <button
-                  onClick={() => {
-                    const target = window.prompt(
-                      'Nombre de categoría destino para reasignar:',
-                    );
-                    if (target) reassignSelectedCategories(target);
-                  }}
-                  className="px-3 py-2 bg-amber-500 text-white rounded-lg text-sm hover:bg-amber-600"
-                >
-                  Reasignar
-                </button>
-                <button
                   onClick={deleteSelectedCategories}
-                  className="px-3 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700"
+                  disabled={selectedCategoryKeys.length === 0}
+                  className={`px-4 py-2 rounded-lg ${
+                    selectedCategoryKeys.length > 0
+                      ? 'bg-red-600 text-white hover:bg-red-700'
+                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  }`}
                 >
                   Eliminar
                 </button>
@@ -1145,89 +1294,95 @@ const ExpenseTrackerApp = () => {
           </div>
         )}
 
-        {/* Modal gasto manual */}
+        {/* Modal: Gasto Manual */}
         {showManualExpenseModal && (
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl shadow-lg max-w-md w-full p-5">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-lg">Nuevo Gasto Manual</h3>
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-xl text-gray-800">Nuevo Gasto Manual</h3>
                 <button
                   onClick={() => setShowManualExpenseModal(false)}
                   className="text-gray-500 hover:text-gray-700"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-6 h-6" />
                 </button>
               </div>
 
-              <div className="space-y-3 mb-4">
-                <input
-                  type="date"
-                  value={manualExpense.date.split('/').reverse().join('-')}
-                  onChange={(e) =>
-                    setManualExpense({
-                      ...manualExpense,
-                      date: e.target.value.split('-').reverse().join('/'),
-                    })
-                  }
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500"
-                />
-                <input
-                  type="text"
-                  placeholder="Concepto"
-                  value={manualExpense.concept}
-                  onChange={(e) =>
-                    setManualExpense({ ...manualExpense, concept: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500"
-                />
-                <input
-                  type="number"
-                  placeholder="Monto"
-                  value={manualExpense.amount}
-                  onChange={(e) =>
-                    setManualExpense({ ...manualExpense, amount: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500"
-                />
-                <select
-                  value={manualExpense.category}
-                  onChange={(e) =>
-                    setManualExpense({ ...manualExpense, category: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500"
-                >
-                  {Object.keys(categories)
-                    .sort()
-                    .map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
+                  <input
+                    type="text"
+                    placeholder="DD/MM/YYYY"
+                    value={manualExpense.date}
+                    onChange={(e) => setManualExpense({ ...manualExpense, date: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: Compra en supermercado"
+                    value={manualExpense.concept}
+                    onChange={(e) => setManualExpense({ ...manualExpense, concept: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Monto (€)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={manualExpense.amount}
+                    onChange={(e) => setManualExpense({ ...manualExpense, amount: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
+                  <select
+                    value={manualExpense.category}
+                    onChange={(e) => setManualExpense({ ...manualExpense, category: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500"
+                  >
+                    {Object.keys(categories).sort().map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
                     ))}
-                </select>
-                <select
-                  value={manualExpense.person}
-                  onChange={(e) =>
-                    setManualExpense({ ...manualExpense, person: e.target.value })
-                  }
-                  className="w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500"
-                >
-                  <option value="Nicolás">Nicolás</option>
-                  <option value="Connie">Connie</option>
-                </select>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Persona</label>
+                  <select
+                    value={manualExpense.person}
+                    onChange={(e) => setManualExpense({ ...manualExpense, person: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="Nicolás">Nicolás</option>
+                    <option value="Connie">Connie</option>
+                  </select>
+                </div>
               </div>
 
-              <div className="flex justify-end gap-2">
-                <button
-                  onClick={() => setShowManualExpenseModal(false)}
-                  className="px-4 py-2 rounded-xl border border-gray-300 text-gray-700 hover:bg-gray-50"
-                >
-                  Cancelar
-                </button>
+              <div className="flex gap-3 mt-6">
                 <button
                   onClick={saveManualExpense}
-                  className="px-4 py-2 rounded-xl bg-green-600 text-white hover:bg-green-700"
+                  disabled={saving}
+                  className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg transition-all disabled:opacity-50"
                 >
-                  Guardar
+                  <Save className="w-5 h-5" />
+                  {saving ? 'Guardando...' : 'Guardar Gasto'}
+                </button>
+                <button
+                  onClick={() => setShowManualExpenseModal(false)}
+                  className="px-6 py-3 rounded-xl font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300"
+                >
+                  Cancelar
                 </button>
               </div>
             </div>
