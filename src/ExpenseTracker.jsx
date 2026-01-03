@@ -245,7 +245,6 @@ const ExpenseTrackerApp = () => {
     return titular || 'Nicolás';
   };
 
-  // NUEVA FUNCIÓN PARA SUBIR EXTRACTO (GENÉRICA)
   const handleExtractUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -316,7 +315,6 @@ const ExpenseTrackerApp = () => {
     }
   };
 
-  // (DEJO parseExcel SIN USO POR SI LO QUIERES RECUPERAR LUEGO, PERO YA NO LO LLAMAMOS)
   const parseExcel = async (file) => {
     setUploading(true);
     try {
@@ -371,7 +369,6 @@ const ExpenseTrackerApp = () => {
         new Date(b.date.split('/').reverse().join('-')) - new Date(a.date.split('/').reverse().join('-'))
       );
 
-      // await persistExpenses(updated); // <- YA NO LA USAMOS AQUÍ
       setExpenses(updated);
       alert(`✅ ${filteredNew.length} nuevos gastos añadidos`);
     } catch (error) {
@@ -382,7 +379,6 @@ const ExpenseTrackerApp = () => {
     }
   };
 
-  // ESTA YA NO SE USA; EL INPUT APUNTA A handleExtractUpload
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (file) parseExcel(file);
@@ -402,7 +398,6 @@ const ExpenseTrackerApp = () => {
     const updated = expenses.map(exp =>
       exp.id === expenseId ? { ...exp, category: editCategory } : exp
     );
-    // await persistExpenses(updated);
     setExpenses(updated);
     setEditingId(null);
     setEditCategory('');
@@ -419,7 +414,6 @@ const ExpenseTrackerApp = () => {
     if (!confirm(`¿Eliminar ${selectedExpenses.length} gasto(s)?`)) return;
 
     const updated = expenses.filter(exp => !selectedExpenses.includes(exp.id));
-    // await persistExpenses(updated);
     setExpenses(updated);
     setSelectedExpenses([]);
   };
@@ -427,7 +421,6 @@ const ExpenseTrackerApp = () => {
   const deleteExpense = async (id) => {
     if (!confirm('¿Eliminar este gasto?')) return;
     const updated = expenses.filter(exp => exp.id !== id);
-    // await persistExpenses(updated);
     setExpenses(updated);
   };
 
@@ -442,7 +435,6 @@ const ExpenseTrackerApp = () => {
     setShowManualExpenseModal(true);
   };
 
-  // NUEVO saveManualExpense QUE INSERTA EN SUPABASE
   const saveManualExpense = async () => {
     const { data: { user: currentUser } } = await supabase.auth.getUser();
     if (!currentUser) {
@@ -579,7 +571,6 @@ const ExpenseTrackerApp = () => {
       selectedCategoryKeys.includes(exp.category) ? { ...exp, category: 'Otro' } : exp
     );
 
-    // await persistExpenses(updatedExpenses);
     setExpenses(updatedExpenses);
     await persistCategories(updatedCategories);
     setSelectedCategoryKeys([]);
@@ -597,7 +588,6 @@ const ExpenseTrackerApp = () => {
     const updatedCategories = { ...categories };
     selectedCategoryKeys.forEach(k => delete updatedCategories[k]);
 
-    // await persistExpenses(updatedExpenses);
     setExpenses(updatedExpenses);
     await persistCategories(updatedCategories);
     setSelectedCategoryKeys([]);
@@ -619,7 +609,6 @@ const ExpenseTrackerApp = () => {
     );
 
     await persistCategories(updatedCategories);
-    // await persistExpenses(updatedExpenses);
     setExpenses(updatedExpenses);
     setSelectedCategoryKeys([]);
     setShowCategoryManager(false);
@@ -669,7 +658,6 @@ const ExpenseTrackerApp = () => {
             {hasUnsavedChanges && (
               <button
                 onClick={async () => {
-                  // await persistExpenses(expenses);
                   await persistCategories(categories);
                   alert('✅ Cambios guardados correctamente');
                 }}
@@ -691,6 +679,8 @@ const ExpenseTrackerApp = () => {
             <label className="relative">
               <input
                 type="file"
+                id="file-upload"
+                name="file-upload"
                 accept=".xlsx,.xls,.csv"
                 onChange={handleExtractUpload}
                 className="hidden"
@@ -816,6 +806,8 @@ const ExpenseTrackerApp = () => {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <select
+              id="filter-person"
+              name="filter-person"
               value={filter.person}
               onChange={(e) => setFilter({ ...filter, person: e.target.value })}
               className="px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
@@ -826,6 +818,8 @@ const ExpenseTrackerApp = () => {
             </select>
 
             <select
+              id="filter-category"
+              name="filter-category"
               value={filter.category}
               onChange={(e) => setFilter({ ...filter, category: e.target.value })}
               className="px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
@@ -841,6 +835,8 @@ const ExpenseTrackerApp = () => {
             </select>
 
             <select
+              id="filter-month"
+              name="filter-month"
               value={filter.month}
               onChange={(e) => setFilter({ ...filter, month: e.target.value })}
               className="px-4 py-2 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
@@ -890,6 +886,8 @@ const ExpenseTrackerApp = () => {
                     <th className="text-left py-3 px-4 font-semibold text-gray-700">
                       <input
                         type="checkbox"
+                        id="select-all-expenses"
+                        name="select-all-expenses"
                         checked={
                           selectedExpenses.length === filteredExpenses.length &&
                           filteredExpenses.length > 0
@@ -918,6 +916,8 @@ const ExpenseTrackerApp = () => {
                       <td className="py-3 px-4">
                         <input
                           type="checkbox"
+                          id={`expense-${expense.id}`}
+                          name={`expense-${expense.id}`}
                           checked={selectedExpenses.includes(expense.id)}
                           onChange={() => toggleSelectExpense(expense.id)}
                         />
@@ -929,6 +929,8 @@ const ExpenseTrackerApp = () => {
                       <td className="py-3 px-4">
                         {editingId === expense.id ? (
                           <select
+                            id={`edit-category-${expense.id}`}
+                            name={`edit-category-${expense.id}`}
                             value={editCategory}
                             onChange={(e) => setEditCategory(e.target.value)}
                             className="px-2 py-1 border border-purple-300 rounded text-xs focus:ring-2 focus:ring-purple-500"
@@ -1036,6 +1038,8 @@ const ExpenseTrackerApp = () => {
                         <div className="flex items-center gap-3">
                           <input
                             type="checkbox"
+                            id={`category-${cat}`}
+                            name={`category-${cat}`}
                             checked={selectedCategoryKeys.includes(cat)}
                             onChange={() => toggleSelectCategoryKey(cat)}
                           />
@@ -1052,6 +1056,8 @@ const ExpenseTrackerApp = () => {
               <div className="flex gap-2 mb-4">
                 <input
                   type="text"
+                  id="new-category-name"
+                  name="new-category-name"
                   placeholder="Nueva categoría"
                   value={newCategoryName}
                   onChange={(e) => setNewCategoryName(e.target.value)}
@@ -1125,11 +1131,13 @@ const ExpenseTrackerApp = () => {
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor="expense-date" className="block text-sm font-medium text-gray-700 mb-1">
                     Fecha
                   </label>
                   <input
                     type="text"
+                    id="expense-date"
+                    name="expense-date"
                     placeholder="DD/MM/YYYY"
                     value={manualExpense.date}
                     onChange={(e) =>
@@ -1140,11 +1148,13 @@ const ExpenseTrackerApp = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor="expense-concept" className="block text-sm font-medium text-gray-700 mb-1">
                     Descripción
                   </label>
                   <input
                     type="text"
+                    id="expense-concept"
+                    name="expense-concept"
                     placeholder="Ej: Compra en supermercado"
                     value={manualExpense.concept}
                     onChange={(e) =>
@@ -1155,11 +1165,13 @@ const ExpenseTrackerApp = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor="expense-amount" className="block text-sm font-medium text-gray-700 mb-1">
                     Monto (€)
                   </label>
                   <input
                     type="number"
+                    id="expense-amount"
+                    name="expense-amount"
                     step="0.01"
                     placeholder="0.00"
                     value={manualExpense.amount}
@@ -1171,10 +1183,12 @@ const ExpenseTrackerApp = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor="expense-category" className="block text-sm font-medium text-gray-700 mb-1">
                     Categoría
                   </label>
                   <select
+                    id="expense-category"
+                    name="expense-category"
                     value={manualExpense.category}
                     onChange={(e) =>
                       setManualExpense({ ...manualExpense, category: e.target.value })
@@ -1192,10 +1206,12 @@ const ExpenseTrackerApp = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor="expense-person" className="block text-sm font-medium text-gray-700 mb-1">
                     Persona
                   </label>
                   <select
+                    id="expense-person"
+                    name="expense-person"
                     value={manualExpense.person}
                     onChange={(e) =>
                       setManualExpense({ ...manualExpense, person: e.target.value })
@@ -1243,6 +1259,8 @@ function ReassignControl({ categories, selectedKeys, onReassign }) {
   return (
     <div className="flex items-center gap-2">
       <select
+        id="reassign-target"
+        name="reassign-target"
         value={target}
         onChange={(e) => setTarget(e.target.value)}
         className="px-3 py-2 border rounded"
