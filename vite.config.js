@@ -3,5 +3,5 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
-  base: '/gastos-compartidos/',   // 👈 solo el path del repo
+  base: '/gastos-compartidos/',
 });
