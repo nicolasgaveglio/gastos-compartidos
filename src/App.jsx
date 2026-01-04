@@ -503,64 +503,53 @@ const ExpenseTrackerApp = () => {
         }
 
       } else if (bankType === 'BBVA') {
-        // BBVA: Columnas = [vacía(0), F.Valor(1), Fecha(2), Concepto(3), Movimiento(4), Importe(5), Divisa(6), Observaciones(7)]
+        // BBVA: Columnas = [F.Valor(0), Fecha(1), Concepto(2), Movimiento(3), Importe(4), Divisa(5), Observaciones(6)]
+        // Nota: NO hay columna vacía al inicio en este formato
         for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
           const row = jsonData[i];
           
-          // Usar F.Valor (col 1) o Fecha (col 2)
-          const fValorCell = row[1];
-          const fechaCell = row[2];
+          // F.Valor está en columna 0, Fecha en columna 1
+          const fValorCell = row[0];
+          const fechaCell = row[1];
           const dateCell = fValorCell || fechaCell;
           
-          const conceptoCell = String(row[3] || '').trim();
-          const movimientoCell = String(row[4] || '').trim();
-          let importeCell = row[5];
+          // Concepto en columna 2, Movimiento en columna 3, Importe en columna 4
+          const conceptoCell = String(row[2] || '').trim();
+          const movimientoCell = String(row[3] || '').trim();
+          let importeCell = row[4];
           
           if (!dateCell || !conceptoCell) continue;
           
           // Saltar mensajes informativos
           const skipKeywords = [
             'extracto', 'actualiza', 'términos', 'condiciones', 
-            'plan 760', 'ya tienes tu'
+            'plan 760', 'ya tienes tu', 'últimos movimientos'
           ];
           if (skipKeywords.some(kw => conceptoCell.toLowerCase().includes(kw))) {
             continue;
           }
           
-          // Saltar transferencias enviadas
+          // Saltar transferencias enviadas (pero permitir "Transferencia realizada")
           if (conceptoCell.toLowerCase().includes('transferencia') && 
               conceptoCell.toLowerCase().includes('enviada')) {
             continue;
           }
 
-          // Extraer monto de columna Importe (5)
+          // Extraer monto de columna Importe (4)
           let amount = 0;
           if (importeCell !== undefined && importeCell !== null && importeCell !== '') {
-            // Manejar formato español: 1.234,56 o -1.234,56
+            // Manejar formato español: -33,36 o 1.234,56
             let amountStr = String(importeCell).replace(/\s/g, '');
+            // Quitar puntos de miles y cambiar coma decimal por punto
             amountStr = amountStr.replace(/\./g, '').replace(',', '.');
             amount = parseFloat(amountStr);
           }
           
-          // Si no hay monto en columna Importe, intentar extraer del concepto
-          if (isNaN(amount) || amount === 0) {
-            const match = conceptoCell.match(/(-?\d+[.,]?\d*)\s*€?\s*$/);
-            if (match) {
-              let matchStr = match[1].replace(/\./g, '').replace(',', '.');
-              amount = parseFloat(matchStr);
-            }
-          }
-          
           if (isNaN(amount)) continue;
           
-          // BBVA puede mostrar gastos como negativos o positivos según el extracto
-          const esGasto = amount < 0 || 
-            movimientoCell.toLowerCase().includes('cargo') ||
-            movimientoCell.toLowerCase().includes('pago') ||
-            movimientoCell.toLowerCase().includes('compra') ||
-            movimientoCell.toLowerCase().includes('adeudo');
-          
-          if (!esGasto && amount > 0) continue;
+          // En BBVA los gastos vienen como negativos (-33,36)
+          // Solo procesar si es negativo (gasto)
+          if (amount >= 0) continue;
           
           amount = Math.abs(amount);
           if (amount <= 0) continue;
