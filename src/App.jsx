@@ -1,1385 +1,1502 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import React, { useEffect, useState, useCallback } from 'react';
+import { supabase } from './supabaseClient';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Cell,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+} from 'recharts';
+import { Upload, DollarSign, User, Filter, Edit2, Plus, Save, X, Trash2, ListChecks, LogOut } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
-// Configuración de Supabase - reemplaza con tus credenciales
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://tu-proyecto.supabase.co';
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || 'tu-anon-key';
-
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-// Utilidades para parsear extractos bancarios
-const parseBankStatement = {
-  // Parser para extractos de Santander (CSV típico)
-  santander: (csvText) => {
-    const lines = csvText.split('\n').filter(line => line.trim());
-    const transactions = [];
-    
-    // Santander típicamente tiene: Fecha, Concepto, Importe, Saldo
-    // Saltamos las primeras líneas de cabecera
-    let dataStarted = false;
-    
-    for (const line of lines) {
-      // Detectar inicio de datos (buscar patrón de fecha)
-      if (/^\d{2}[/-]\d{2}[/-]\d{4}/.test(line.trim())) {
-        dataStarted = true;
-      }
-      
-      if (!dataStarted) continue;
-      
-      // Parsear línea CSV considerando campos con comas dentro de comillas
-      const fields = parseCSVLine(line);
-      
-      if (fields.length >= 3) {
-        const dateStr = fields[0]?.trim();
-        const concept = fields[1]?.trim();
-        const amountStr = fields[2]?.trim();
-        
-        const date = parseSpanishDate(dateStr);
-        const amount = parseSpanishAmount(amountStr);
-        
-        if (date && !isNaN(amount)) {
-          transactions.push({
-            date,
-            concept,
-            amount,
-            bank: 'Santander',
-            raw: line
-          });
-        }
-      }
-    }
-    
-    return transactions;
-  },
-
-  // Parser para extractos de BBVA
-  // Columnas: [vacía, F.Valor, Fecha, Concepto, Movimiento, Importe, Divisa, Observaciones]
-  bbva: (csvText) => {
-    const lines = csvText.split('\n').filter(line => line.trim());
-    const transactions = [];
-    
-    let headerFound = false;
-    
-    for (const line of lines) {
-      const fields = parseCSVLine(line);
-      
-      // Detectar cabecera
-      if (!headerFound) {
-        const lineUpper = line.toUpperCase();
-        if (lineUpper.includes('F.VALOR') || lineUpper.includes('CONCEPTO') || lineUpper.includes('IMPORTE')) {
-          headerFound = true;
-          continue;
-        }
-      }
-      
-      // Si no hemos encontrado cabecera, buscar patrón de fecha
-      if (!headerFound && /\d{2}[/-]\d{2}[/-]\d{4}/.test(line)) {
-        headerFound = true;
-      }
-      
-      if (!headerFound) continue;
-      
-      // BBVA: [0:vacía, 1:F.Valor, 2:Fecha, 3:Concepto, 4:Movimiento, 5:Importe, 6:Divisa, 7:Observaciones]
-      if (fields.length >= 6) {
-        const fValor = fields[1]?.trim();
-        const fecha = fields[2]?.trim();
-        const concepto = fields[3]?.trim();
-        const movimiento = fields[4]?.trim();
-        const importeStr = fields[5]?.trim();
-        const divisa = fields[6]?.trim() || 'EUR';
-        const observaciones = fields[7]?.trim() || '';
-        
-        // Usar F.Valor o Fecha
-        const dateStr = fValor || fecha;
-        const date = parseSpanishDate(dateStr);
-        const amount = parseSpanishAmount(importeStr);
-        
-        if (date && !isNaN(amount)) {
-          transactions.push({
-            date,
-            concept: concepto,
-            movement_type: movimiento,
-            amount,
-            currency: divisa,
-            observations: observaciones,
-            bank: 'BBVA',
-            raw: line
-          });
-        }
-      }
-    }
-    
-    return transactions;
-  },
-
-  // Detección automática de banco
-  detect: (csvText) => {
-    const upperText = csvText.toUpperCase();
-    
-    if (upperText.includes('BBVA') || upperText.includes('F.VALOR')) {
-      return 'bbva';
-    }
-    if (upperText.includes('SANTANDER') || upperText.includes('BANCO SANTANDER')) {
-      return 'santander';
-    }
-    
-    // Intentar detectar por estructura de columnas
-    const firstLines = csvText.split('\n').slice(0, 10).join('\n').toUpperCase();
-    if (firstLines.includes('DIVISA') && firstLines.includes('OBSERVACIONES')) {
-      return 'bbva';
-    }
-    
-    // Por defecto intentar Santander
-    return 'santander';
-  }
+// =====================================================
+// CONFIGURACIÓN
+// =====================================================
+const DEFAULT_CATEGORIES = {
+  Alquiler: ['alquiler', 'rent'],
+  Electricidad: ['electricidad', 'electric', 'endesa', 'iberdrola'],
+  Gas: ['gas natural', 'gas'],
+  Agua: ['agua', 'aguas', 'aigues'],
+  Celular: ['telefonica moviles', 'movistar', 'vodafone', 'orange', 'yoigo', 'celular'],
+  Internet: ['telefonica de espana', 'fijo', 'internet', 'fibra'],
+  'Muebles/Electrodomésticos/Cocina': ['ikea', 'leroy', 'media markt', 'worten', 'el corte ingles'],
+  'Transporte público': ['tmb', 't mobilitat', 'renfe', 'metro', 'bus'],
+  Bicing: ['bicing'],
+  'Uber/taxi': ['uber', 'taxi', 'cabify', 'bolt', 'yego'],
+  Supermercado: [
+    'mercadona', 'carrefour', 'lidl', 'aldi', 'dia', 'caprabo', 'bonpreu', 
+    'condis', 'supermercat', 'kachafruit', 'greensland', 'cash and carry',
+  ],
+  Suplementos: ['suplemento', 'proteina', 'vitamina', 'myprotein'],
+  Salidas: ['restaurante', 'bar ', 'popis', 'fornet', 'canigo', 'bonastre', 'bravas', 'foix', 'pedreta', 'pren algo'],
+  Ropa: ['zara', 'h&m', 'mango', 'pull&bear', 'bershka', 'stradivarius', 'oysho', 'massimo dutti', 'uniqlo'],
+  Limpieza: ['limpieza', 'detergente', 'lejia'],
+  'Peluquería/Barbería': ['peluqueria', 'barberia', 'salon', 'corte pelo'],
+  Educación: ['universidad', 'curso', 'academia', 'escuela', 'nuclio', 'udemy', 'coursera'],
+  'Plataformas (Netflix/Amazon/Adobe/Spotify/Microsoft)': [
+    'netflix', 'amazon prime', 'spotify', 'adobe', 'microsoft', 'disney', 'hbo', 'apple',
+  ],
+  'Conciertos/Obras de teatro': ['concierto', 'teatro', 'entradas', 'ticketmaster'],
+  Deportes: ['decathlon', 'sprinter', 'gimnasio', 'deporte'],
+  'Recreación al aire libre': ['parque', 'excursion', 'montana'],
+  'Seguro médico': ['seguro medico', 'axa', 'sanitas', 'mapfre', 'planeta seguros'],
+  Gimnasio: ['gimnasio', 'gym', 'fitness', 'crossfit'],
+  'Consultas de médicos/odontólogos': ['medico', 'doctor', 'clinica', 'dentista', 'odontologo'],
+  'Farmacia/Medicamentos': ['farmacia', 'medicamento', 'parafarmacia'],
+  Pasajes: ['vueling', 'ryanair', 'iberia', 'renfe', 'bus', 'avion', 'tren'],
+  Alojamiento: ['booking', 'airbnb', 'hotel', 'hostal'],
+  Comidas: ['comida', 'meal', 'food'],
+  Recuerdos: ['souvenir', 'recuerdo', 'regalo'],
+  'Alquiler de coches': ['rent a car', 'alquiler coche', 'hertz', 'avis', 'europcar'],
+  Psicóloga: ['psicologa', 'psicologo', 'terapia', 'psicoterapia'],
+  Otro: [],
 };
 
-// Funciones auxiliares de parseo
-function parseCSVLine(line) {
-  const result = [];
-  let current = '';
-  let inQuotes = false;
-  
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    
-    if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if ((char === ',' || char === ';') && !inQuotes) {
-      result.push(current);
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-  result.push(current);
-  
-  return result.map(field => field.replace(/^"|"$/g, '').trim());
-}
+const COLORS = ['#8b5cf6', '#ec4899', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#14b8a6', '#f97316'];
 
-function parseSpanishDate(dateStr) {
-  if (!dateStr) return null;
-  
-  // Formatos: DD/MM/YYYY, DD-MM-YYYY, DD/MM/YY
-  const patterns = [
-    /(\d{2})[/-](\d{2})[/-](\d{4})/,
-    /(\d{2})[/-](\d{2})[/-](\d{2})/
-  ];
-  
-  for (const pattern of patterns) {
-    const match = dateStr.match(pattern);
-    if (match) {
-      let [, day, month, year] = match;
-      if (year.length === 2) {
-        year = parseInt(year) > 50 ? '19' + year : '20' + year;
-      }
-      return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
-    }
-  }
-  
-  return null;
-}
-
-function parseSpanishAmount(amountStr) {
-  if (!amountStr) return NaN;
-  
-  // Limpiar y convertir formato español (1.234,56) a número
-  let cleaned = amountStr
-    .replace(/[€$\s]/g, '')
-    .replace(/\./g, '')
-    .replace(',', '.');
-  
-  return parseFloat(cleaned);
-}
-
-// Componente principal
-export default function App() {
+// =====================================================
+// COMPONENTE PRINCIPAL
+// =====================================================
+const ExpenseTrackerApp = () => {
+  // Estado de autenticación
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [view, setView] = useState('expenses'); // expenses, import, summary, groups
+  const [groupId, setGroupId] = useState(null);
+  const [isInitialized, setIsInitialized] = useState(false);
+
+  // Estado de datos
   const [expenses, setExpenses] = useState([]);
-  const [groups, setGroups] = useState([]);
-  const [selectedGroup, setSelectedGroup] = useState(null);
-  const [members, setMembers] = useState([]);
-  const [notification, setNotification] = useState(null);
+  const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
 
-  // Estado para nuevo gasto
-  const [newExpense, setNewExpense] = useState({
-    description: '',
+  // Estado de UI
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Filtros
+  const [filter, setFilter] = useState({ person: 'all', category: 'all', month: 'all' });
+
+  // Edición
+  const [editingId, setEditingId] = useState(null);
+  const [editCategory, setEditCategory] = useState('');
+
+  // Gestión de categorías
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [selectedCategoryKeys, setSelectedCategoryKeys] = useState([]);
+
+  // Selección múltiple
+  const [selectedExpenses, setSelectedExpenses] = useState([]);
+
+  // Modal gasto manual
+  const [showManualExpenseModal, setShowManualExpenseModal] = useState(false);
+  const [manualExpense, setManualExpense] = useState({
+    date: new Date().toLocaleDateString('es-ES'),
+    concept: '',
     amount: '',
-    paid_by: '',
-    split_between: [],
-    category: 'general',
-    date: new Date().toISOString().split('T')[0]
+    category: 'Otro',
+    person: 'Nicolás',
   });
 
-  // Estado para importación
-  const [importData, setImportData] = useState({
-    bank: 'auto',
-    csvContent: '',
-    parsedTransactions: [],
-    selectedTransactions: []
-  });
-
-  // Autenticación
+  // =====================================================
+  // AUTENTICACIÓN
+  // =====================================================
   useEffect(() => {
+    // Obtener sesión inicial
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
-      setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    // Escuchar cambios de autenticación
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth event:', event);
       setUser(session?.user ?? null);
+      
+      if (!session) {
+        // Limpiar estado cuando se cierra sesión
+        setExpenses([]);
+        setGroupId(null);
+        setIsInitialized(false);
+        setLoading(false);
+      }
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  // Cargar datos cuando hay usuario
+  // =====================================================
+  // CARGAR GRUPO DEL USUARIO
+  // =====================================================
   useEffect(() => {
-    if (user) {
-      loadGroups();
+    if (!user) {
+      setLoading(false);
+      return;
     }
+
+    const loadUserGroup = async () => {
+      try {
+        console.log('🔍 Buscando grupo para usuario:', user.id);
+        
+        // Buscar grupo donde el usuario está incluido
+        const { data: groupData, error: groupError } = await supabase
+          .from('groups')
+          .select('id, name')
+          .contains('user_ids', [user.id])
+          .single();
+
+        if (groupError && groupError.code !== 'PGRST116') {
+          console.error('Error buscando grupo:', groupError);
+          throw groupError;
+        }
+
+        if (groupData) {
+          console.log('✅ Grupo encontrado:', groupData);
+          setGroupId(groupData.id);
+        } else {
+          // Crear nuevo grupo para el usuario
+          console.log('📝 Creando nuevo grupo...');
+          const { data: newGroup, error: createError } = await supabase
+            .from('groups')
+            .insert({
+              name: `Grupo de ${user.email?.split('@')[0] || 'Usuario'}`,
+              user_ids: [user.id],
+            })
+            .select('id')
+            .single();
+
+          if (createError) {
+            console.error('Error creando grupo:', createError);
+            throw createError;
+          }
+
+          console.log('✅ Grupo creado:', newGroup);
+          setGroupId(newGroup.id);
+        }
+      } catch (error) {
+        console.error('❌ Error en loadUserGroup:', error);
+        alert('Error cargando tu grupo. Por favor recarga la página.');
+      }
+    };
+
+    loadUserGroup();
   }, [user]);
 
+  // =====================================================
+  // CARGAR DATOS CUANDO groupId ESTÁ LISTO
+  // =====================================================
   useEffect(() => {
-    if (selectedGroup) {
-      loadExpenses();
-      loadMembers();
-    }
-  }, [selectedGroup]);
+    if (!user || groupId === null) return;
 
-  const showNotification = (message, type = 'info') => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3000);
-  };
-
-  // Funciones de carga de datos
-  const loadGroups = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('groups')
-        .select('*, group_members!inner(user_id)')
-        .eq('group_members.user_id', user.id);
-
-      if (error) throw error;
-      setGroups(data || []);
+    const loadData = async () => {
+      setLoading(true);
       
-      if (data?.length > 0 && !selectedGroup) {
-        setSelectedGroup(data[0]);
-      }
-    } catch (error) {
-      console.error('Error cargando grupos:', error);
-      showNotification('Error al cargar grupos', 'error');
-    }
-  };
+      try {
+        // Cargar gastos
+        console.log('📊 Cargando gastos para grupo:', groupId);
+        const { data: expensesData, error: expensesError } = await supabase
+          .from('expenses')
+          .select('*')
+          .eq('group_id', groupId)
+          .order('date', { ascending: false });
 
-  const loadExpenses = async () => {
-    if (!selectedGroup) return;
-    
-    try {
-      const { data, error } = await supabase
-        .from('expenses')
-        .select(`
-          *,
-          expense_splits (
-            user_id,
-            amount,
-            users (email, name)
-          ),
-          users:paid_by (email, name)
-        `)
-        .eq('group_id', selectedGroup.id)
-        .order('date', { ascending: false });
-
-      if (error) throw error;
-      setExpenses(data || []);
-    } catch (error) {
-      console.error('Error cargando gastos:', error);
-      showNotification('Error al cargar gastos', 'error');
-    }
-  };
-
-  const loadMembers = async () => {
-    if (!selectedGroup) return;
-    
-    try {
-      const { data, error } = await supabase
-        .from('group_members')
-        .select('*, users (id, email, name)')
-        .eq('group_id', selectedGroup.id);
-
-      if (error) throw error;
-      setMembers(data?.map(m => m.users) || []);
-    } catch (error) {
-      console.error('Error cargando miembros:', error);
-    }
-  };
-
-  // Funciones de autenticación
-  const handleLogin = async (email, password) => {
-    try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-      showNotification('Sesión iniciada', 'success');
-    } catch (error) {
-      showNotification(error.message, 'error');
-    }
-  };
-
-  const handleSignUp = async (email, password, name) => {
-    try {
-      const { data, error } = await supabase.auth.signUp({ 
-        email, 
-        password,
-        options: {
-          data: { name }
+        if (expensesError) {
+          console.error('Error cargando gastos:', expensesError);
+        } else {
+          console.log('✅ Gastos cargados:', expensesData?.length || 0);
+          setExpenses(expensesData || []);
         }
-      });
-      if (error) throw error;
-      
-      // Crear perfil de usuario
-      if (data.user) {
-        await supabase.from('users').insert({
-          id: data.user.id,
-          email,
-          name
-        });
+
+        // Cargar categorías personalizadas
+        const { data: categoriesData } = await supabase
+          .from('categories')
+          .select('categories')
+          .eq('group_id', groupId)
+          .single();
+
+        if (categoriesData?.categories) {
+          setCategories({ ...DEFAULT_CATEGORIES, ...categoriesData.categories });
+        }
+
+        setIsInitialized(true);
+      } catch (error) {
+        console.error('❌ Error cargando datos:', error);
+      } finally {
+        setLoading(false);
       }
-      
-      showNotification('Cuenta creada. Revisa tu email para confirmar.', 'success');
-    } catch (error) {
-      showNotification(error.message, 'error');
+    };
+
+    loadData();
+  }, [user, groupId]);
+
+  // =====================================================
+  // FUNCIONES DE AUTENTICACIÓN
+  // =====================================================
+  const handleLogin = async () => {
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { 
+        redirectTo: window.location.origin + window.location.pathname
+      },
+    });
+    if (error) {
+      console.error('Error en login:', error);
+      alert('Error al iniciar sesión: ' + error.message);
     }
   };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
-    setSelectedGroup(null);
-    setExpenses([]);
-    setGroups([]);
   };
 
-  // Funciones de gastos
-  const handleAddExpense = async (e) => {
-    e.preventDefault();
-    
-    if (!selectedGroup || !newExpense.description || !newExpense.amount || !newExpense.paid_by) {
-      showNotification('Completa todos los campos requeridos', 'error');
-      return;
+  // =====================================================
+  // FUNCIONES DE PERSISTENCIA
+  // =====================================================
+  const saveExpenseToDb = async (expense) => {
+    if (!user || groupId === null) {
+      console.error('❌ No hay usuario o grupo');
+      alert('Error: Debes estar logueado y tener un grupo asignado');
+      return null;
     }
 
+    setSaving(true);
+    
     try {
-      const amount = parseFloat(newExpense.amount);
-      const splitMembers = newExpense.split_between.length > 0 
-        ? newExpense.split_between 
-        : members.map(m => m.id);
-      
-      const splitAmount = amount / splitMembers.length;
+      const expenseData = {
+        group_id: groupId,
+        user_id: user.id,
+        date: expense.date,
+        concept: expense.concept,
+        amount: parseFloat(expense.amount),
+        category: expense.category,
+        person: expense.person,
+      };
 
-      // Insertar gasto
-      const { data: expense, error: expenseError } = await supabase
+      console.log('💾 Guardando gasto:', expenseData);
+
+      const { data, error } = await supabase
         .from('expenses')
-        .insert({
-          group_id: selectedGroup.id,
-          description: newExpense.description,
-          amount,
-          paid_by: newExpense.paid_by,
-          category: newExpense.category,
-          date: newExpense.date
-        })
+        .insert([expenseData])
         .select()
         .single();
 
-      if (expenseError) throw expenseError;
+      if (error) {
+        console.error('❌ Error guardando:', error);
+        alert(`Error guardando gasto: ${error.message}`);
+        return null;
+      }
 
-      // Insertar splits
-      const splits = splitMembers.map(userId => ({
-        expense_id: expense.id,
-        user_id: userId,
-        amount: splitAmount
-      }));
-
-      const { error: splitError } = await supabase
-        .from('expense_splits')
-        .insert(splits);
-
-      if (splitError) throw splitError;
-
-      showNotification('Gasto añadido correctamente', 'success');
-      setNewExpense({
-        description: '',
-        amount: '',
-        paid_by: '',
-        split_between: [],
-        category: 'general',
-        date: new Date().toISOString().split('T')[0]
-      });
-      loadExpenses();
+      console.log('✅ Gasto guardado:', data);
+      return data;
     } catch (error) {
-      console.error('Error añadiendo gasto:', error);
-      showNotification('Error al añadir gasto', 'error');
+      console.error('❌ Error inesperado:', error);
+      alert(`Error inesperado: ${error.message}`);
+      return null;
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleDeleteExpense = async (expenseId) => {
-    if (!confirm('¿Eliminar este gasto?')) return;
+  const updateExpenseInDb = async (id, updates) => {
+    if (!user || groupId === null) return null;
+
+    setSaving(true);
     
+    try {
+      const { data, error } = await supabase
+        .from('expenses')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('group_id', groupId)
+        .select()
+        .single();
+
+      if (error) {
+        console.error('❌ Error actualizando:', error);
+        alert(`Error actualizando gasto: ${error.message}`);
+        return null;
+      }
+
+      return data;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteExpenseFromDb = async (id) => {
+    if (!user || groupId === null) return false;
+
     try {
       const { error } = await supabase
         .from('expenses')
         .delete()
-        .eq('id', expenseId);
-
-      if (error) throw error;
-      showNotification('Gasto eliminado', 'success');
-      loadExpenses();
-    } catch (error) {
-      showNotification('Error al eliminar gasto', 'error');
-    }
-  };
-
-  // Funciones de importación
-  const handleFileUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target.result;
-      setImportData(prev => ({ ...prev, csvContent: content }));
-      parseImportedFile(content);
-    };
-    reader.readAsText(file, 'ISO-8859-1'); // Encoding común en bancos españoles
-  };
-
-  const parseImportedFile = (content) => {
-    const bank = importData.bank === 'auto' 
-      ? parseBankStatement.detect(content) 
-      : importData.bank;
-    
-    const parser = parseBankStatement[bank];
-    if (!parser) {
-      showNotification('Banco no soportado', 'error');
-      return;
-    }
-
-    const transactions = parser(content);
-    setImportData(prev => ({
-      ...prev,
-      parsedTransactions: transactions,
-      selectedTransactions: transactions.map((_, i) => i)
-    }));
-
-    showNotification(`${transactions.length} transacciones encontradas`, 'success');
-  };
-
-  const handleImportSelected = async () => {
-    if (!selectedGroup || importData.selectedTransactions.length === 0) {
-      showNotification('Selecciona transacciones para importar', 'error');
-      return;
-    }
-
-    try {
-      const toImport = importData.selectedTransactions.map(index => {
-        const tx = importData.parsedTransactions[index];
-        return {
-          group_id: selectedGroup.id,
-          description: tx.concept,
-          amount: Math.abs(tx.amount),
-          paid_by: user.id,
-          category: 'imported',
-          date: tx.date,
-          metadata: {
-            bank: tx.bank,
-            original_amount: tx.amount,
-            movement_type: tx.movement_type,
-            observations: tx.observations
-          }
-        };
-      });
-
-      const { error } = await supabase
-        .from('expenses')
-        .insert(toImport);
-
-      if (error) throw error;
-
-      showNotification(`${toImport.length} gastos importados`, 'success');
-      setImportData({
-        bank: 'auto',
-        csvContent: '',
-        parsedTransactions: [],
-        selectedTransactions: []
-      });
-      setView('expenses');
-      loadExpenses();
-    } catch (error) {
-      console.error('Error importando:', error);
-      showNotification('Error al importar gastos', 'error');
-    }
-  };
-
-  const toggleTransactionSelection = (index) => {
-    setImportData(prev => {
-      const selected = prev.selectedTransactions.includes(index)
-        ? prev.selectedTransactions.filter(i => i !== index)
-        : [...prev.selectedTransactions, index];
-      return { ...prev, selectedTransactions: selected };
-    });
-  };
-
-  // Calcular balances
-  const calculateBalances = useCallback(() => {
-    const balances = {};
-    
-    members.forEach(member => {
-      balances[member.id] = { paid: 0, owes: 0, name: member.name || member.email };
-    });
-
-    expenses.forEach(expense => {
-      if (balances[expense.paid_by]) {
-        balances[expense.paid_by].paid += expense.amount;
-      }
-      
-      expense.expense_splits?.forEach(split => {
-        if (balances[split.user_id]) {
-          balances[split.user_id].owes += split.amount;
-        }
-      });
-    });
-
-    return Object.entries(balances).map(([id, data]) => ({
-      id,
-      name: data.name,
-      paid: data.paid,
-      owes: data.owes,
-      balance: data.paid - data.owes
-    }));
-  }, [expenses, members]);
-
-  // Calcular deudas simplificadas
-  const calculateDebts = useCallback(() => {
-    const balances = calculateBalances();
-    const debts = [];
-    
-    const debtors = balances.filter(b => b.balance < 0).map(b => ({ ...b, amount: -b.balance }));
-    const creditors = balances.filter(b => b.balance > 0).map(b => ({ ...b, amount: b.balance }));
-    
-    debtors.sort((a, b) => b.amount - a.amount);
-    creditors.sort((a, b) => b.amount - a.amount);
-    
-    let i = 0, j = 0;
-    
-    while (i < debtors.length && j < creditors.length) {
-      const debtor = debtors[i];
-      const creditor = creditors[j];
-      const amount = Math.min(debtor.amount, creditor.amount);
-      
-      if (amount > 0.01) {
-        debts.push({
-          from: debtor.name,
-          fromId: debtor.id,
-          to: creditor.name,
-          toId: creditor.id,
-          amount: Math.round(amount * 100) / 100
-        });
-      }
-      
-      debtor.amount -= amount;
-      creditor.amount -= amount;
-      
-      if (debtor.amount < 0.01) i++;
-      if (creditor.amount < 0.01) j++;
-    }
-    
-    return debts;
-  }, [calculateBalances]);
-
-  // Funciones de grupos
-  const handleCreateGroup = async (name) => {
-    try {
-      const { data: group, error: groupError } = await supabase
-        .from('groups')
-        .insert({ name, created_by: user.id })
-        .select()
-        .single();
-
-      if (groupError) throw groupError;
-
-      const { error: memberError } = await supabase
-        .from('group_members')
-        .insert({ group_id: group.id, user_id: user.id, role: 'admin' });
-
-      if (memberError) throw memberError;
-
-      showNotification('Grupo creado', 'success');
-      loadGroups();
-      setSelectedGroup(group);
-    } catch (error) {
-      showNotification('Error al crear grupo', 'error');
-    }
-  };
-
-  const handleInviteMember = async (email) => {
-    if (!selectedGroup) return;
-    
-    try {
-      // Buscar usuario por email
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', email)
-        .single();
-
-      if (userError || !userData) {
-        showNotification('Usuario no encontrado', 'error');
-        return;
-      }
-
-      const { error } = await supabase
-        .from('group_members')
-        .insert({ group_id: selectedGroup.id, user_id: userData.id, role: 'member' });
+        .eq('id', id)
+        .eq('group_id', groupId);
 
       if (error) {
-        if (error.code === '23505') {
-          showNotification('El usuario ya es miembro', 'error');
-        } else {
-          throw error;
-        }
-        return;
+        console.error('❌ Error eliminando:', error);
+        alert(`Error eliminando gasto: ${error.message}`);
+        return false;
       }
 
-      showNotification('Miembro añadido', 'success');
-      loadMembers();
+      return true;
     } catch (error) {
-      showNotification('Error al añadir miembro', 'error');
+      console.error('❌ Error inesperado:', error);
+      return false;
     }
   };
 
-  // Componentes de UI
+  const saveCategoriestoDb = async (newCategories) => {
+    if (!groupId) return;
+
+    try {
+      const { error } = await supabase
+        .from('categories')
+        .upsert([{ 
+          group_id: groupId, 
+          categories: newCategories 
+        }], { 
+          onConflict: 'group_id' 
+        });
+
+      if (error) {
+        console.error('Error guardando categorías:', error);
+        alert(`Error guardando categorías: ${error.message}`);
+      } else {
+        setCategories(newCategories);
+      }
+    } catch (error) {
+      console.error('Error inesperado:', error);
+    }
+  };
+
+  // =====================================================
+  // FUNCIONES DE CATEGORIZACIÓN
+  // =====================================================
+  const categorizeExpense = useCallback((concept) => {
+    const conceptLower = concept.toLowerCase();
+    for (const [category, keywords] of Object.entries(categories)) {
+      if (category === 'Otro') continue;
+      for (const keyword of keywords) {
+        if (conceptLower.includes(keyword)) return category;
+      }
+    }
+    return 'Otro';
+  }, [categories]);
+
+  const detectPerson = (concept, titular) => {
+    if (concept.toLowerCase().includes('connie')) return 'Connie';
+    return titular || 'Nicolás';
+  };
+
+  // =====================================================
+  // MANEJO DE ARCHIVOS EXCEL - SANTANDER Y BBVA
+  // =====================================================
+  const parseExcel = async (file) => {
+    if (!user || groupId === null) {
+      alert('Error: Debes estar logueado');
+      return;
+    }
+
+    setUploading(true);
+    
+    try {
+      const data = await file.arrayBuffer();
+      const workbook = XLSX.read(data, { cellDates: true, cellNF: true, cellStyles: true });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+
+      // =====================================================
+      // DETECTAR TIPO DE BANCO
+      // =====================================================
+      let bankType = 'UNKNOWN';
+      let headerRowIndex = -1;
+
+      for (let i = 0; i < Math.min(jsonData.length, 15); i++) {
+        const row = jsonData[i];
+        const rowStr = row.map(cell => String(cell).toUpperCase()).join(' ');
+        
+        // Detectar Santander: tiene "FECHA OPERACIÓN" o "IMPORTE EUR"
+        if (rowStr.includes('FECHA OPERACIÓN') || rowStr.includes('IMPORTE EUR')) {
+          bankType = 'SANTANDER';
+          headerRowIndex = i;
+          break;
+        }
+        
+        // Detectar BBVA: tiene "Fecha" y "Nombre" o "Importe" y "Divisa"
+        if ((rowStr.includes('FECHA') && rowStr.includes('NOMBRE')) || 
+            (rowStr.includes('IMPORTE') && rowStr.includes('DIVISA'))) {
+          bankType = 'BBVA';
+          headerRowIndex = i;
+          break;
+        }
+      }
+
+      // Fallback: buscar cualquier fila con FECHA/CONCEPTO/IMPORTE
+      if (headerRowIndex === -1) {
+        for (let i = 0; i < jsonData.length; i++) {
+          const row = jsonData[i];
+          if (row.some(cell => 
+            String(cell).toUpperCase().includes('FECHA') || 
+            String(cell).toUpperCase().includes('CONCEPTO') ||
+            String(cell).toUpperCase().includes('IMPORTE')
+          )) {
+            headerRowIndex = i;
+            bankType = 'SANTANDER';
+            break;
+          }
+        }
+      }
+
+      if (headerRowIndex === -1) {
+        alert('No se pudo detectar el formato del extracto bancario.\nFormatos soportados: Santander, BBVA');
+        setUploading(false);
+        return;
+      }
+
+      console.log(`📊 Banco detectado: ${bankType}, Header en fila: ${headerRowIndex}`);
+
+      // =====================================================
+      // DETECTAR TITULAR
+      // =====================================================
+      let titular = 'Nicolás';
+      for (let i = 0; i < headerRowIndex; i++) {
+        const row = jsonData[i];
+        const rowStr = row.join(' ').toUpperCase();
+        if (rowStr.includes('CONNIE') || rowStr.includes('LAURA') || rowStr.includes('AGUSTINA')) {
+          titular = 'Connie';
+          break;
+        }
+      }
+
+      // =====================================================
+      // PROCESAR SEGÚN TIPO DE BANCO
+      // =====================================================
+      const newExpenses = [];
+
+      if (bankType === 'SANTANDER') {
+        // SANTANDER: Columnas = [FECHA OPERACIÓN, FECHA VALOR, CONCEPTO, IMPORTE EUR, SALDO]
+        for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
+          const row = jsonData[i];
+          if (!row[0] || !row[2] || row[3] === undefined) continue;
+
+          const amountRaw = parseFloat(String(row[3]).replace(',', '.'));
+          if (isNaN(amountRaw) || amountRaw >= 0) continue;
+
+          const amount = Math.abs(amountRaw);
+          const concept = String(row[2]).trim();
+
+          let dateStr = row[0];
+          if (dateStr instanceof Date) {
+            dateStr = dateStr.toLocaleDateString('es-ES');
+          } else if (typeof dateStr === 'number') {
+            const date = new Date((dateStr - 25569) * 86400 * 1000);
+            dateStr = date.toLocaleDateString('es-ES');
+          }
+
+          newExpenses.push({
+            date: dateStr,
+            concept,
+            amount,
+            category: categorizeExpense(concept),
+            person: detectPerson(concept, titular),
+          });
+        }
+
+      } else if (bankType === 'BBVA') {
+        // BBVA: Columnas = [vacía, Fecha, Nombre/Descripción, Importe, Divisa]
+        for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
+          const row = jsonData[i];
+          
+          const dateCell = row[1];
+          const descriptionCell = String(row[2] || '').trim();
+          let amountCell = row[3];
+          
+          if (!dateCell || !descriptionCell) continue;
+          
+          // Saltar mensajes informativos
+          const skipKeywords = [
+            'extracto', 'actualiza', 'términos', 'condiciones', 
+            'plan 760', 'ya tienes tu'
+          ];
+          if (skipKeywords.some(kw => descriptionCell.toLowerCase().includes(kw))) {
+            continue;
+          }
+          
+          // Saltar transferencias enviadas
+          if (descriptionCell.toLowerCase().includes('transferencia') && 
+              descriptionCell.toLowerCase().includes('enviada')) {
+            continue;
+          }
+
+          // Extraer monto
+          let amount = 0;
+          if (amountCell !== undefined && amountCell !== null && amountCell !== '') {
+            amount = parseFloat(String(amountCell).replace(',', '.'));
+          }
+          
+          // Si no hay monto en columna, extraer del texto
+          if (isNaN(amount) || amount === 0) {
+            const match = descriptionCell.match(/(\d+[,.]?\d*)\s*€?\s*$/);
+            if (match) {
+              amount = parseFloat(match[1].replace(',', '.'));
+            }
+          }
+          
+          if (isNaN(amount) || amount <= 0) continue;
+
+          let dateStr = dateCell;
+          if (dateCell instanceof Date) {
+            dateStr = dateCell.toLocaleDateString('es-ES');
+          }
+
+          // Limpiar concepto
+          let concept = descriptionCell
+            .replace(/\d+[,.]?\d*\s*€?\s*$/, '')
+            .replace(/adeudo de/i, '')
+            .trim();
+          
+          if (concept.length < 3) {
+            concept = descriptionCell;
+          }
+
+          newExpenses.push({
+            date: dateStr,
+            concept,
+            amount,
+            category: categorizeExpense(concept),
+            person: detectPerson(concept, titular),
+          });
+        }
+      }
+
+      // =====================================================
+      // VALIDAR Y GUARDAR
+      // =====================================================
+      if (newExpenses.length === 0) {
+        alert(`No se encontraron gastos en el archivo (${bankType}).\nVerifica que el extracto tenga movimientos.`);
+        setUploading(false);
+        return;
+      }
+
+      console.log(`✅ ${newExpenses.length} gastos encontrados de ${bankType}`);
+
+      // Filtrar duplicados
+      const existingKeys = new Set(
+        expenses.map(e => `${e.date}-${e.concept}-${e.amount}`)
+      );
+      
+      const uniqueNew = newExpenses.filter(
+        e => !existingKeys.has(`${e.date}-${e.concept}-${e.amount}`)
+      );
+
+      if (uniqueNew.length === 0) {
+        alert('Todos los gastos del archivo ya existen');
+        setUploading(false);
+        return;
+      }
+
+      // Insertar en lote
+      console.log(`💾 Insertando ${uniqueNew.length} gastos nuevos...`);
+      
+      const expensesToInsert = uniqueNew.map(exp => ({
+        group_id: groupId,
+        user_id: user.id,
+        date: exp.date,
+        concept: exp.concept,
+        amount: exp.amount,
+        category: exp.category,
+        person: exp.person,
+      }));
+
+      const { data: insertedData, error } = await supabase
+        .from('expenses')
+        .insert(expensesToInsert)
+        .select();
+
+      if (error) {
+        console.error('Error insertando gastos:', error);
+        alert(`Error guardando gastos: ${error.message}`);
+        return;
+      }
+
+      // Actualizar estado local
+      const updatedExpenses = [...insertedData, ...expenses].sort((a, b) => {
+        const dateA = a.date.split('/').reverse().join('-');
+        const dateB = b.date.split('/').reverse().join('-');
+        return dateB.localeCompare(dateA);
+      });
+
+      setExpenses(updatedExpenses);
+      alert(`✅ ${uniqueNew.length} nuevos gastos añadidos (${bankType})`);
+
+    } catch (error) {
+      console.error('Error procesando archivo:', error);
+      alert('Error al procesar el archivo. Asegúrate de que sea un extracto válido.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      parseExcel(file);
+      e.target.value = '';
+    }
+  };
+
+  // =====================================================
+  // MANEJO DE GASTOS MANUALES
+  // =====================================================
+  const openManualExpenseModal = () => {
+    setManualExpense({
+      date: new Date().toLocaleDateString('es-ES'),
+      concept: '',
+      amount: '',
+      category: 'Otro',
+      person: 'Nicolás',
+    });
+    setShowManualExpenseModal(true);
+  };
+
+  const saveManualExpense = async () => {
+    if (!manualExpense.concept.trim()) {
+      alert('Ingresa una descripción');
+      return;
+    }
+    if (!manualExpense.amount || parseFloat(manualExpense.amount) <= 0) {
+      alert('Ingresa un monto válido');
+      return;
+    }
+
+    const savedExpense = await saveExpenseToDb(manualExpense);
+    
+    if (savedExpense) {
+      const updatedExpenses = [savedExpense, ...expenses].sort((a, b) => {
+        const dateA = a.date.split('/').reverse().join('-');
+        const dateB = b.date.split('/').reverse().join('-');
+        return dateB.localeCompare(dateA);
+      });
+      
+      setExpenses(updatedExpenses);
+      setShowManualExpenseModal(false);
+      alert('✅ Gasto agregado correctamente');
+    }
+  };
+
+  // =====================================================
+  // EDICIÓN DE GASTOS
+  // =====================================================
+  const startEdit = (expense) => {
+    setEditingId(expense.id);
+    setEditCategory(expense.category);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditCategory('');
+  };
+
+  const saveEdit = async (expenseId) => {
+    const updated = await updateExpenseInDb(expenseId, { category: editCategory });
+    
+    if (updated) {
+      setExpenses(expenses.map(exp => 
+        exp.id === expenseId ? { ...exp, category: editCategory } : exp
+      ));
+    }
+    
+    setEditingId(null);
+    setEditCategory('');
+  };
+
+  // =====================================================
+  // ELIMINACIÓN DE GASTOS
+  // =====================================================
+  const deleteExpense = async (id) => {
+    if (!window.confirm('¿Eliminar este gasto?')) return;
+
+    const success = await deleteExpenseFromDb(id);
+    if (success) {
+      setExpenses(expenses.filter(exp => exp.id !== id));
+    }
+  };
+
+  const deleteSelectedExpenses = async () => {
+    if (selectedExpenses.length === 0) return;
+    if (!window.confirm(`¿Eliminar ${selectedExpenses.length} gasto(s)?`)) return;
+
+    try {
+      const { error } = await supabase
+        .from('expenses')
+        .delete()
+        .in('id', selectedExpenses)
+        .eq('group_id', groupId);
+
+      if (error) {
+        console.error('Error eliminando gastos:', error);
+        alert(`Error: ${error.message}`);
+        return;
+      }
+
+      setExpenses(expenses.filter(exp => !selectedExpenses.includes(exp.id)));
+      setSelectedExpenses([]);
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  };
+
+  const toggleSelectExpense = (id) => {
+    setSelectedExpenses(prev =>
+      prev.includes(id) ? prev.filter(eid => eid !== id) : [...prev, id]
+    );
+  };
+
+  // =====================================================
+  // GESTIÓN DE CATEGORÍAS
+  // =====================================================
+  const toggleSelectCategoryKey = (key) => {
+    setSelectedCategoryKeys(prev =>
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    );
+  };
+
+  const addNewCategory = async () => {
+    const name = newCategoryName.trim();
+    if (!name) {
+      alert('Escribe un nombre válido');
+      return;
+    }
+    if (categories[name]) {
+      alert('Ya existe esa categoría');
+      return;
+    }
+
+    const updated = { ...categories, [name]: [] };
+    await saveCategoriestoDb(updated);
+    setNewCategoryName('');
+  };
+
+  const renameSelectedCategory = async () => {
+    if (selectedCategoryKeys.length !== 1) {
+      alert('Selecciona exactamente 1 categoría para renombrar');
+      return;
+    }
+
+    const oldName = selectedCategoryKeys[0];
+    const newName = window.prompt('Nuevo nombre para la categoría', oldName);
+    
+    if (!newName || newName.trim() === '' || newName === oldName) return;
+
+    const updatedCategories = { ...categories };
+    updatedCategories[newName] = updatedCategories[oldName] || [];
+    delete updatedCategories[oldName];
+
+    const updatedExpenses = expenses.map(exp =>
+      exp.category === oldName ? { ...exp, category: newName } : exp
+    );
+
+    const expensesToUpdate = expenses.filter(exp => exp.category === oldName);
+    if (expensesToUpdate.length > 0) {
+      await supabase
+        .from('expenses')
+        .update({ category: newName })
+        .in('id', expensesToUpdate.map(e => e.id));
+    }
+
+    await saveCategoriestoDb(updatedCategories);
+    setExpenses(updatedExpenses);
+    setSelectedCategoryKeys([]);
+    setShowCategoryManager(false);
+  };
+
+  const deleteSelectedCategories = async () => {
+    if (selectedCategoryKeys.length === 0) {
+      alert('Selecciona al menos una categoría para eliminar');
+      return;
+    }
+    
+    if (!window.confirm(`¿Eliminar ${selectedCategoryKeys.length} categoría(s)? Los gastos pasarán a "Otro".`)) {
+      return;
+    }
+
+    const updatedCategories = { ...categories };
+    selectedCategoryKeys.forEach(k => delete updatedCategories[k]);
+
+    const expensesToUpdate = expenses.filter(exp => selectedCategoryKeys.includes(exp.category));
+    if (expensesToUpdate.length > 0) {
+      await supabase
+        .from('expenses')
+        .update({ category: 'Otro' })
+        .in('id', expensesToUpdate.map(e => e.id));
+    }
+
+    const updatedExpenses = expenses.map(exp =>
+      selectedCategoryKeys.includes(exp.category) ? { ...exp, category: 'Otro' } : exp
+    );
+
+    await saveCategoriestoDb(updatedCategories);
+    setExpenses(updatedExpenses);
+    setSelectedCategoryKeys([]);
+    setShowCategoryManager(false);
+  };
+
+  // =====================================================
+  // FILTROS Y DATOS PARA GRÁFICOS
+  // =====================================================
+  const getFilteredExpenses = useCallback(() => {
+    return expenses.filter(exp => {
+      if (filter.person !== 'all' && exp.person !== filter.person) return false;
+      if (filter.category !== 'all' && exp.category !== filter.category) return false;
+      if (filter.month !== 'all') {
+        const parts = exp.date.split('/');
+        if (parts.length === 3) {
+          const expMonth = `${parts[2]}-${parts[1].padStart(2, '0')}`;
+          if (expMonth !== filter.month) return false;
+        }
+      }
+      return true;
+    });
+  }, [expenses, filter]);
+
+  const getCategoryData = () => {
+    const filtered = getFilteredExpenses();
+    const categoryTotals = {};
+    filtered.forEach(exp => {
+      categoryTotals[exp.category] = (categoryTotals[exp.category] || 0) + Number(exp.amount);
+    });
+    return Object.entries(categoryTotals)
+      .map(([name, value]) => ({ name, value: parseFloat(value.toFixed(2)) }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 5);
+  };
+
+  const getMonthlyData = () => {
+    const monthlyTotals = {};
+    expenses.forEach(exp => {
+      if (filter.person !== 'all' && exp.person !== filter.person) return;
+      if (filter.category !== 'all' && exp.category !== filter.category) return;
+
+      const parts = exp.date.split('/');
+      if (parts.length === 3) {
+        const monthKey = `${parts[2]}-${parts[1].padStart(2, '0')}`;
+        monthlyTotals[monthKey] = (monthlyTotals[monthKey] || 0) + Number(exp.amount);
+      }
+    });
+
+    return Object.entries(monthlyTotals)
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([month, total]) => {
+        const [year, m] = month.split('-');
+        const monthName = new Date(year, parseInt(m) - 1).toLocaleDateString('es-ES', { month: 'short' });
+        return { month: `${monthName} ${year}`, total: parseFloat(total.toFixed(2)) };
+      });
+  };
+
+  const getPersonData = () => {
+    const filtered = getFilteredExpenses();
+    const personTotals = { 'Nicolás': 0, 'Connie': 0 };
+    filtered.forEach(exp => {
+      if (personTotals.hasOwnProperty(exp.person)) {
+        personTotals[exp.person] += Number(exp.amount);
+      }
+    });
+    return [
+      { name: 'Nicolás', value: parseFloat(personTotals['Nicolás'].toFixed(2)) },
+      { name: 'Connie', value: parseFloat(personTotals['Connie'].toFixed(2)) },
+    ];
+  };
+
+  const getTotalExpenses = () => {
+    return getFilteredExpenses().reduce((sum, e) => sum + Number(e.amount), 0);
+  };
+
+  const getAvailableMonths = () => {
+    const months = new Set();
+    expenses.forEach(exp => {
+      const parts = exp.date.split('/');
+      if (parts.length === 3) {
+        months.add(`${parts[2]}-${parts[1].padStart(2, '0')}`);
+      }
+    });
+    return Array.from(months).sort().reverse();
+  };
+
+  // =====================================================
+  // RENDER: PANTALLA DE CARGA
+  // =====================================================
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-purple-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600 font-medium">Cargando gastos...</p>
+        </div>
       </div>
     );
   }
 
+  // =====================================================
+  // RENDER: PANTALLA DE LOGIN
+  // =====================================================
   if (!user) {
-    return <AuthScreen onLogin={handleLogin} onSignUp={handleSignUp} />;
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 px-4">
+        <div className="bg-white rounded-3xl shadow-xl p-8 max-w-md w-full border border-purple-100">
+          <h1 className="text-3xl md:text-4xl font-bold text-center bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-2">
+            Gastos Compartidos 💑
+          </h1>
+          <p className="text-gray-600 mb-8 text-center">
+            Inicia sesión para gestionar tus gastos
+          </p>
+          <button
+            onClick={handleLogin}
+            className="w-full flex items-center justify-center gap-2 px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:shadow-lg transition-all font-semibold text-lg"
+          >
+            <User className="w-5 h-5" /> 
+            Iniciar sesión con Google
+          </button>
+        </div>
+      </div>
+    );
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Notificación */}
-      {notification && (
-        <div className={`fixed top-4 right-4 z-50 px-4 py-2 rounded-lg shadow-lg text-white ${
-          notification.type === 'error' ? 'bg-red-500' :
-          notification.type === 'success' ? 'bg-green-500' : 'bg-blue-500'
-        }`}>
-          {notification.message}
-        </div>
-      )}
+  // =====================================================
+  // RENDER: APLICACIÓN PRINCIPAL
+  // =====================================================
+  const categoryData = getCategoryData();
+  const personData = getPersonData();
+  const monthlyData = getMonthlyData();
+  const totalExpenses = getTotalExpenses();
+  const filteredExpenses = getFilteredExpenses();
 
-      {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <h1 className="text-xl font-bold text-gray-800">💰 Gastos Compartidos</h1>
-            
-            {groups.length > 0 && (
-              <select
-                value={selectedGroup?.id || ''}
-                onChange={(e) => {
-                  const group = groups.find(g => g.id === e.target.value);
-                  setSelectedGroup(group);
-                }}
-                className="border rounded-lg px-3 py-1 text-sm"
-              >
-                {groups.map(group => (
-                  <option key={group.id} value={group.id}>{group.name}</option>
-                ))}
-              </select>
-            )}
-          </div>
-          
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600">{user.email}</span>
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 text-gray-900">
+      <div className="max-w-7xl mx-auto px-4 py-6 md:py-10">
+        
+        {/* Header */}
+        <header className="bg-white rounded-3xl shadow-xl p-6 md:p-8 mb-8 border border-purple-100">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+              <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                Gastos de Nicolás & Connie 💑
+              </h1>
+              <p className="text-gray-600 mt-1">
+                Gestión inteligente de gastos compartidos
+              </p>
+              <p className="text-xs text-gray-400 mt-1">
+                {user.email}
+              </p>
+            </div>
             <button
               onClick={handleLogout}
-              className="text-sm text-gray-500 hover:text-gray-700"
+              className="flex items-center gap-2 px-6 py-3 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-all font-semibold"
             >
+              <LogOut className="w-4 h-4" />
               Cerrar sesión
             </button>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* Navegación */}
-      <nav className="bg-white border-b">
-        <div className="max-w-6xl mx-auto px-4">
-          <div className="flex gap-1">
-            {[
-              { id: 'expenses', label: '📋 Gastos' },
-              { id: 'import', label: '📥 Importar' },
-              { id: 'summary', label: '📊 Resumen' },
-              { id: 'groups', label: '👥 Grupos' }
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setView(tab.id)}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                  view === tab.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </nav>
-
-      {/* Contenido principal */}
-      <main className="max-w-6xl mx-auto px-4 py-6">
-        {!selectedGroup && view !== 'groups' ? (
-          <div className="text-center py-12">
-            <p className="text-gray-500 mb-4">No tienes ningún grupo seleccionado</p>
-            <button
-              onClick={() => setView('groups')}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-            >
-              Crear o unirse a un grupo
-            </button>
-          </div>
-        ) : (
-          <>
-            {view === 'expenses' && (
-              <ExpensesView
-                expenses={expenses}
-                members={members}
-                newExpense={newExpense}
-                setNewExpense={setNewExpense}
-                onAddExpense={handleAddExpense}
-                onDeleteExpense={handleDeleteExpense}
-                currentUserId={user.id}
-              />
-            )}
-            
-            {view === 'import' && (
-              <ImportView
-                importData={importData}
-                setImportData={setImportData}
-                onFileUpload={handleFileUpload}
-                onParseFile={() => parseImportedFile(importData.csvContent)}
-                onToggleTransaction={toggleTransactionSelection}
-                onImport={handleImportSelected}
-              />
-            )}
-            
-            {view === 'summary' && (
-              <SummaryView
-                balances={calculateBalances()}
-                debts={calculateDebts()}
-                expenses={expenses}
-              />
-            )}
-            
-            {view === 'groups' && (
-              <GroupsView
-                groups={groups}
-                selectedGroup={selectedGroup}
-                members={members}
-                onCreateGroup={handleCreateGroup}
-                onSelectGroup={setSelectedGroup}
-                onInviteMember={handleInviteMember}
-              />
-            )}
-          </>
-        )}
-      </main>
-    </div>
-  );
-}
-
-// Componente de autenticación
-function AuthScreen({ onLogin, onSignUp }) {
-  const [isLogin, setIsLogin] = useState(true);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (isLogin) {
-      onLogin(email, password);
-    } else {
-      onSignUp(email, password, name);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
-        <h1 className="text-2xl font-bold text-center mb-2">💰 Gastos Compartidos</h1>
-        <p className="text-gray-500 text-center mb-6">
-          {isLogin ? 'Inicia sesión para continuar' : 'Crea tu cuenta'}
-        </p>
-        
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {!isLogin && (
-            <input
-              type="text"
-              placeholder="Nombre"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-              required
-            />
-          )}
-          
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-            required
-          />
-          
-          <input
-            type="password"
-            placeholder="Contraseña"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-            required
-            minLength={6}
-          />
-          
+        {/* Acciones */}
+        <div className="flex flex-wrap gap-3 mb-6 items-center">
           <button
-            type="submit"
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+            onClick={openManualExpenseModal}
+            disabled={saving || !isInitialized}
+            className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg transition-all font-semibold disabled:opacity-50"
           >
-            {isLogin ? 'Iniciar sesión' : 'Crear cuenta'}
+            <Plus className="w-4 h-4" />
+            Agregar Gasto
           </button>
-        </form>
-        
-        <p className="text-center mt-4 text-sm text-gray-600">
-          {isLogin ? '¿No tienes cuenta?' : '¿Ya tienes cuenta?'}{' '}
+
+          <label className="relative cursor-pointer">
+            <input
+              type="file"
+              accept=".xls,.xlsx"
+              onChange={handleFileUpload}
+              className="hidden"
+              disabled={uploading || !isInitialized}
+            />
+            <div className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all ${
+              uploading || !isInitialized
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg'
+            }`}>
+              <Upload className="w-4 h-4" />
+              {uploading ? 'Procesando...' : 'Subir Extracto'}
+            </div>
+          </label>
+
           <button
-            onClick={() => setIsLogin(!isLogin)}
-            className="text-blue-600 font-medium hover:underline"
+            onClick={() => setShowCategoryManager(true)}
+            className="flex items-center gap-2 px-4 py-3 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 transition-all font-medium ml-auto"
           >
-            {isLogin ? 'Regístrate' : 'Inicia sesión'}
+            <ListChecks className="w-4 h-4" />
+            Gestionar Categorías
           </button>
-        </p>
-      </div>
-    </div>
-  );
-}
+        </div>
 
-// Vista de gastos
-function ExpensesView({ expenses, members, newExpense, setNewExpense, onAddExpense, onDeleteExpense, currentUserId }) {
-  const categories = [
-    { id: 'general', label: '📦 General' },
-    { id: 'food', label: '🍕 Comida' },
-    { id: 'transport', label: '🚗 Transporte' },
-    { id: 'housing', label: '🏠 Vivienda' },
-    { id: 'entertainment', label: '🎬 Ocio' },
-    { id: 'utilities', label: '💡 Servicios' },
-    { id: 'imported', label: '📥 Importado' }
-  ];
-
-  return (
-    <div className="grid md:grid-cols-3 gap-6">
-      {/* Formulario nuevo gasto */}
-      <div className="md:col-span-1">
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <h2 className="font-semibold text-lg mb-4">Añadir gasto</h2>
-          
-          <form onSubmit={onAddExpense} className="space-y-4">
-            <input
-              type="text"
-              placeholder="Descripción"
-              value={newExpense.description}
-              onChange={(e) => setNewExpense(prev => ({ ...prev, description: e.target.value }))}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-              required
-            />
-            
-            <input
-              type="number"
-              placeholder="Importe"
-              step="0.01"
-              value={newExpense.amount}
-              onChange={(e) => setNewExpense(prev => ({ ...prev, amount: e.target.value }))}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-              required
-            />
-            
-            <select
-              value={newExpense.paid_by}
-              onChange={(e) => setNewExpense(prev => ({ ...prev, paid_by: e.target.value }))}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-              required
-            >
-              <option value="">¿Quién pagó?</option>
-              {members.map(member => (
-                <option key={member.id} value={member.id}>
-                  {member.name || member.email}
-                </option>
-              ))}
-            </select>
-            
-            <select
-              value={newExpense.category}
-              onChange={(e) => setNewExpense(prev => ({ ...prev, category: e.target.value }))}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-            >
-              {categories.map(cat => (
-                <option key={cat.id} value={cat.id}>{cat.label}</option>
-              ))}
-            </select>
-            
-            <input
-              type="date"
-              value={newExpense.date}
-              onChange={(e) => setNewExpense(prev => ({ ...prev, date: e.target.value }))}
-              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-            />
-            
-            <div>
-              <label className="block text-sm text-gray-600 mb-2">Dividir entre:</label>
-              <div className="space-y-1 max-h-32 overflow-y-auto">
-                {members.map(member => (
-                  <label key={member.id} className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={newExpense.split_between.length === 0 || newExpense.split_between.includes(member.id)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          if (newExpense.split_between.length === members.length - 1) {
-                            setNewExpense(prev => ({ ...prev, split_between: [] }));
-                          } else {
-                            setNewExpense(prev => ({
-                              ...prev,
-                              split_between: [...prev.split_between, member.id]
-                            }));
-                          }
-                        } else {
-                          const newSplit = newExpense.split_between.length === 0
-                            ? members.filter(m => m.id !== member.id).map(m => m.id)
-                            : newExpense.split_between.filter(id => id !== member.id);
-                          setNewExpense(prev => ({ ...prev, split_between: newSplit }));
-                        }
-                      }}
-                      className="rounded"
-                    />
-                    {member.name || member.email}
-                  </label>
-                ))}
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mb-8">
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm font-medium">Total Gastado</p>
+                <p className="text-3xl font-bold text-purple-600 mt-1">€{totalExpenses.toFixed(2)}</p>
               </div>
-              <p className="text-xs text-gray-400 mt-1">
-                {newExpense.split_between.length === 0 
-                  ? 'Todos los miembros' 
-                  : `${newExpense.split_between.length} seleccionados`}
+              <div className="bg-purple-100 p-3 rounded-xl">
+                <DollarSign className="text-purple-600 w-8 h-8" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-pink-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm font-medium">Nicolás</p>
+                <p className="text-3xl font-bold text-pink-600 mt-1">€{(personData[0]?.value || 0).toFixed(2)}</p>
+              </div>
+              <div className="bg-pink-100 p-3 rounded-xl">
+                <User className="text-pink-600 w-8 h-8" />
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-blue-100">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-gray-600 text-sm font-medium">Connie</p>
+                <p className="text-3xl font-bold text-blue-600 mt-1">€{(personData[1]?.value || 0).toFixed(2)}</p>
+              </div>
+              <div className="bg-blue-100 p-3 rounded-xl">
+                <User className="text-blue-600 w-8 h-8" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Gráficos */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100">
+            <h3 className="font-bold mb-4 text-gray-800">Top 5 Categorías</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={categoryData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" height={60} />
+                  <YAxis />
+                  <Tooltip formatter={(value) => [`€${value.toFixed(2)}`, '']} />
+                  <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+                    {categoryData.map((entry, index) => (
+                      <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-pink-100">
+            <h3 className="font-bold mb-4 text-gray-800">Gastos Mensuales</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={monthlyData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" height={60} />
+                  <YAxis />
+                  <Tooltip formatter={(value) => [`€${value.toFixed(2)}`, '']} />
+                  <Line type="monotone" dataKey="total" stroke="#8b5cf6" strokeWidth={3} dot={{ r: 4 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-blue-100">
+            <h3 className="font-bold mb-4 text-gray-800">Gastos por Persona</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    dataKey="value"
+                    data={personData}
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    label={({ name, value }) => `${name}: €${value}`}
+                  >
+                    {personData.map((entry, index) => (
+                      <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => [`€${value.toFixed(2)}`, '']} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+
+        {/* Filtros */}
+        <div className="bg-white rounded-2xl shadow-lg p-6 mb-8 border border-purple-100">
+          <h3 className="font-bold mb-4 flex items-center gap-2 text-gray-800">
+            <Filter className="w-5 h-5 text-purple-600" /> Filtros
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <select
+              value={filter.person}
+              onChange={(e) => setFilter({ ...filter, person: e.target.value })}
+              className="px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            >
+              <option value="all">👥 Ambos</option>
+              <option value="Nicolás">👤 Nicolás</option>
+              <option value="Connie">👤 Connie</option>
+            </select>
+
+            <select
+              value={filter.category}
+              onChange={(e) => setFilter({ ...filter, category: e.target.value })}
+              className="px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            >
+              <option value="all">📂 Todas las categorías</option>
+              {Object.keys(categories).sort().map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+
+            <select
+              value={filter.month}
+              onChange={(e) => setFilter({ ...filter, month: e.target.value })}
+              className="px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            >
+              <option value="all">📅 Todos los meses</option>
+              {getAvailableMonths().map((month) => {
+                const [year, m] = month.split('-');
+                const monthName = new Date(year, parseInt(m) - 1).toLocaleDateString('es-ES', {
+                  month: 'long',
+                  year: 'numeric',
+                });
+                return (
+                  <option key={month} value={month}>{monthName}</option>
+                );
+              })}
+            </select>
+          </div>
+        </div>
+
+        {/* Lista de Gastos */}
+        <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100">
+          {expenses.length === 0 ? (
+            <div className="text-center py-12">
+              <Upload className="mx-auto text-gray-300 mb-4 w-16 h-16" />
+              <p className="text-gray-500 text-lg">
+                Sube tu extracto bancario o agrega un gasto manual para comenzar
               </p>
             </div>
-            
-            <button
-              type="submit"
-              className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors"
-            >
-              Añadir gasto
-            </button>
-          </form>
-        </div>
-      </div>
-      
-      {/* Lista de gastos */}
-      <div className="md:col-span-2">
-        <div className="bg-white rounded-xl shadow-sm">
-          <div className="p-4 border-b">
-            <h2 className="font-semibold text-lg">Historial de gastos</h2>
-          </div>
-          
-          {expenses.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">
-              No hay gastos registrados
-            </div>
           ) : (
-            <div className="divide-y">
-              {expenses.map(expense => (
-                <div key={expense.id} className="p-4 hover:bg-gray-50">
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{expense.description}</span>
-                        <span className="text-xs px-2 py-0.5 bg-gray-100 rounded-full text-gray-600">
-                          {categories.find(c => c.id === expense.category)?.label || expense.category}
-                        </span>
-                      </div>
-                      <p className="text-sm text-gray-500 mt-1">
-                        Pagado por {expense.users?.name || expense.users?.email || 'Desconocido'}
-                        {expense.expense_splits?.length > 0 && (
-                          <> · Dividido entre {expense.expense_splits.length}</>
-                        )}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        {new Date(expense.date).toLocaleDateString('es-ES')}
-                      </p>
-                    </div>
-                    
-                    <div className="text-right">
-                      <p className="font-semibold text-lg">
-                        {expense.amount.toFixed(2)} €
-                      </p>
-                      <button
-                        onClick={() => onDeleteExpense(expense.id)}
-                        className="text-xs text-red-500 hover:text-red-700 mt-1"
-                      >
-                        Eliminar
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-gray-800">
+                  Lista de Gastos ({filteredExpenses.length})
+                </h3>
+                {selectedExpenses.length > 0 && (
+                  <button
+                    onClick={deleteSelectedExpenses}
+                    className="flex items-center gap-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 text-sm"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Eliminar ({selectedExpenses.length})
+                  </button>
+                )}
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b-2 border-purple-100">
+                      <th className="p-3 text-left">
+                        <input
+                          type="checkbox"
+                          checked={selectedExpenses.length > 0 && selectedExpenses.length === filteredExpenses.length}
+                          onChange={(e) => setSelectedExpenses(
+                            e.target.checked ? filteredExpenses.map((exp) => exp.id) : []
+                          )}
+                        />
+                      </th>
+                      <th className="p-3 text-left font-semibold text-gray-700">Fecha</th>
+                      <th className="p-3 text-left font-semibold text-gray-700">Concepto</th>
+                      <th className="p-3 text-left font-semibold text-gray-700">Categoría</th>
+                      <th className="p-3 text-left font-semibold text-gray-700">Persona</th>
+                      <th className="p-3 text-right font-semibold text-gray-700">Monto</th>
+                      <th className="p-3 text-center font-semibold text-gray-700">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredExpenses.map((expense) => (
+                      <tr key={expense.id} className="border-b border-gray-100 hover:bg-purple-50 transition-colors">
+                        <td className="p-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedExpenses.includes(expense.id)}
+                            onChange={() => toggleSelectExpense(expense.id)}
+                          />
+                        </td>
+                        <td className="p-3 text-gray-600">{expense.date}</td>
+                        <td className="p-3 text-gray-800 max-w-xs truncate">{expense.concept}</td>
+                        <td className="p-3">
+                          {editingId === expense.id ? (
+                            <div className="flex items-center gap-1">
+                              <select
+                                value={editCategory}
+                                onChange={(e) => setEditCategory(e.target.value)}
+                                className="px-2 py-1 border border-purple-300 rounded text-xs focus:ring-2 focus:ring-purple-500"
+                              >
+                                {Object.keys(categories).sort().map((cat) => (
+                                  <option key={cat} value={cat}>{cat}</option>
+                                ))}
+                              </select>
+                              <button
+                                onClick={() => saveEdit(expense.id)}
+                                className="p-1 bg-green-500 text-white rounded hover:bg-green-600"
+                              >
+                                <Save className="w-3 h-3" />
+                              </button>
+                              <button
+                                onClick={cancelEdit}
+                                className="p-1 text-gray-500 hover:text-gray-700"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span className="inline-block px-3 py-1 bg-purple-100 text-purple-700 text-xs rounded-full font-medium">
+                              {expense.category}
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          <span className={`inline-block px-3 py-1 text-xs rounded-full font-medium ${
+                            expense.person === 'Nicolás' 
+                              ? 'bg-pink-100 text-pink-700' 
+                              : 'bg-blue-100 text-blue-700'
+                          }`}>
+                            {expense.person}
+                          </span>
+                        </td>
+                        <td className="p-3 text-right font-semibold text-gray-800">
+                          €{Number(expense.amount).toFixed(2)}
+                        </td>
+                        <td className="p-3 text-center">
+                          {editingId !== expense.id && (
+                            <div className="flex justify-center gap-1">
+                              <button
+                                onClick={() => startEdit(expense)}
+                                className="p-1.5 text-purple-600 hover:bg-purple-100 rounded"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => deleteExpense(expense.id)}
+                                className="p-1.5 text-red-600 hover:bg-red-100 rounded"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </div>
-      </div>
-    </div>
-  );
-}
 
-// Vista de importación
-function ImportView({ importData, setImportData, onFileUpload, onToggleTransaction, onImport }) {
-  return (
-    <div className="max-w-4xl mx-auto">
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="font-semibold text-lg mb-4">Importar extracto bancario</h2>
-        
-        <div className="space-y-4">
-          <div className="flex gap-4">
-            <select
-              value={importData.bank}
-              onChange={(e) => setImportData(prev => ({ ...prev, bank: e.target.value }))}
-              className="px-3 py-2 border rounded-lg"
-            >
-              <option value="auto">🔍 Detectar automáticamente</option>
-              <option value="santander">🏦 Santander</option>
-              <option value="bbva">🏦 BBVA</option>
-            </select>
-            
-            <label className="flex-1">
-              <input
-                type="file"
-                accept=".csv,.txt,.xls,.xlsx"
-                onChange={onFileUpload}
-                className="hidden"
-              />
-              <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-blue-500 transition-colors">
-                <p className="text-gray-600">
-                  📁 Haz clic para seleccionar archivo CSV
-                </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  Soporta extractos de Santander y BBVA
-                </p>
+        {/* Modal: Gestión de Categorías */}
+        {showCategoryManager && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-xl text-gray-800">Administración de Categorías</h3>
+                <button
+                  onClick={() => {
+                    setShowCategoryManager(false);
+                    setSelectedCategoryKeys([]);
+                  }}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <X className="w-6 h-6" />
+                </button>
               </div>
-            </label>
-          </div>
-          
-          {/* Transacciones parseadas */}
-          {importData.parsedTransactions.length > 0 && (
-            <div className="mt-6">
-              <div className="flex justify-between items-center mb-3">
-                <h3 className="font-medium">
-                  Transacciones encontradas ({importData.parsedTransactions.length})
-                </h3>
+
+              {/* Nueva categoría */}
+              <div className="mb-4">
+                <h4 className="font-semibold mb-2 text-sm text-gray-700">Nueva Categoría</h4>
                 <div className="flex gap-2">
+                  <input
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    placeholder="Nombre de nueva categoría"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  />
                   <button
-                    onClick={() => setImportData(prev => ({
-                      ...prev,
-                      selectedTransactions: prev.parsedTransactions.map((_, i) => i)
-                    }))}
-                    className="text-sm text-blue-600 hover:underline"
+                    onClick={addNewCategory}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                   >
-                    Seleccionar todo
-                  </button>
-                  <button
-                    onClick={() => setImportData(prev => ({
-                      ...prev,
-                      selectedTransactions: []
-                    }))}
-                    className="text-sm text-gray-600 hover:underline"
-                  >
-                    Deseleccionar todo
+                    Agregar
                   </button>
                 </div>
               </div>
-              
-              <div className="border rounded-lg divide-y max-h-96 overflow-y-auto">
-                {importData.parsedTransactions.map((tx, index) => (
-                  <label
-                    key={index}
-                    className={`flex items-center gap-3 p-3 cursor-pointer hover:bg-gray-50 ${
-                      importData.selectedTransactions.includes(index) ? 'bg-blue-50' : ''
-                    }`}
-                  >
+
+              {/* Lista de categorías */}
+              <div className="mb-4 max-h-60 overflow-y-auto border rounded-lg">
+                {Object.keys(categories).sort().map((cat) => (
+                  <label key={cat} className="flex items-center gap-3 p-3 hover:bg-gray-50 cursor-pointer border-b last:border-b-0">
                     <input
                       type="checkbox"
-                      checked={importData.selectedTransactions.includes(index)}
-                      onChange={() => onToggleTransaction(index)}
-                      className="rounded"
+                      checked={selectedCategoryKeys.includes(cat)}
+                      onChange={() => toggleSelectCategoryKey(cat)}
                     />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{tx.concept}</p>
-                      <p className="text-xs text-gray-500">
-                        {tx.date} · {tx.bank}
-                        {tx.movement_type && ` · ${tx.movement_type}`}
-                      </p>
-                    </div>
-                    <span className={`font-semibold ${tx.amount < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                      {tx.amount.toFixed(2)} €
+                    <span className="flex-1 font-medium">{cat}</span>
+                    <span className="text-sm text-gray-500">
+                      {expenses.filter(e => e.category === cat).length} gastos
                     </span>
                   </label>
                 ))}
               </div>
-              
-              <button
-                onClick={onImport}
-                disabled={importData.selectedTransactions.length === 0}
-                className="mt-4 w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Importar {importData.selectedTransactions.length} transacciones
-              </button>
-            </div>
-          )}
-          
-          {/* Información sobre formato BBVA */}
-          <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-            <h4 className="font-medium text-sm mb-2">📋 Formato esperado BBVA:</h4>
-            <p className="text-xs text-gray-600 font-mono">
-              [vacía], F.Valor, Fecha, Concepto, Movimiento, Importe, Divisa, Observaciones
-            </p>
-            <h4 className="font-medium text-sm mt-3 mb-2">📋 Formato esperado Santander:</h4>
-            <p className="text-xs text-gray-600 font-mono">
-              Fecha, Concepto, Importe, Saldo
-            </p>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
-// Vista de resumen
-function SummaryView({ balances, debts, expenses }) {
-  const totalExpenses = expenses.reduce((sum, e) => sum + e.amount, 0);
-  
-  return (
-    <div className="grid md:grid-cols-2 gap-6">
-      {/* Balances */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="font-semibold text-lg mb-4">💰 Balances</h2>
-        
-        <div className="space-y-3">
-          {balances.map(balance => (
-            <div key={balance.id} className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
-              <div>
-                <p className="font-medium">{balance.name}</p>
-                <p className="text-xs text-gray-500">
-                  Pagado: {balance.paid.toFixed(2)} € · Debe: {balance.owes.toFixed(2)} €
-                </p>
-              </div>
-              <span className={`font-semibold text-lg ${
-                balance.balance > 0 ? 'text-green-600' : balance.balance < 0 ? 'text-red-600' : 'text-gray-600'
-              }`}>
-                {balance.balance > 0 ? '+' : ''}{balance.balance.toFixed(2)} €
-              </span>
-            </div>
-          ))}
-        </div>
-        
-        <div className="mt-4 pt-4 border-t">
-          <div className="flex justify-between text-sm text-gray-600">
-            <span>Total gastos del grupo:</span>
-            <span className="font-semibold">{totalExpenses.toFixed(2)} €</span>
-          </div>
-        </div>
-      </div>
-      
-      {/* Deudas simplificadas */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="font-semibold text-lg mb-4">🔄 Cómo saldar cuentas</h2>
-        
-        {debts.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
-            <p className="text-4xl mb-2">✅</p>
-            <p>¡Todas las cuentas están saldadas!</p>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {debts.map((debt, index) => (
-              <div key={index} className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-blue-800">{debt.from}</span>
-                  <span className="text-gray-400">→</span>
-                  <span className="font-medium text-blue-800">{debt.to}</span>
-                </div>
-                <span className="font-bold text-blue-600">
-                  {debt.amount.toFixed(2)} €
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      
-      {/* Estadísticas por categoría */}
-      <div className="md:col-span-2 bg-white rounded-xl shadow-sm p-6">
-        <h2 className="font-semibold text-lg mb-4">📊 Gastos por categoría</h2>
-        
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {Object.entries(
-            expenses.reduce((acc, e) => {
-              acc[e.category] = (acc[e.category] || 0) + e.amount;
-              return acc;
-            }, {})
-          ).sort((a, b) => b[1] - a[1]).map(([category, amount]) => (
-            <div key={category} className="p-3 bg-gray-50 rounded-lg">
-              <p className="text-sm text-gray-600 capitalize">{category}</p>
-              <p className="font-semibold text-lg">{amount.toFixed(2)} €</p>
-              <p className="text-xs text-gray-400">
-                {((amount / totalExpenses) * 100).toFixed(1)}%
-              </p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Vista de grupos
-function GroupsView({ groups, selectedGroup, members, onCreateGroup, onSelectGroup, onInviteMember }) {
-  const [newGroupName, setNewGroupName] = useState('');
-  const [inviteEmail, setInviteEmail] = useState('');
-
-  return (
-    <div className="grid md:grid-cols-2 gap-6">
-      {/* Crear grupo */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="font-semibold text-lg mb-4">➕ Crear nuevo grupo</h2>
-        
-        <form onSubmit={(e) => {
-          e.preventDefault();
-          if (newGroupName.trim()) {
-            onCreateGroup(newGroupName.trim());
-            setNewGroupName('');
-          }
-        }}>
-          <input
-            type="text"
-            placeholder="Nombre del grupo"
-            value={newGroupName}
-            onChange={(e) => setNewGroupName(e.target.value)}
-            className="w-full px-3 py-2 border rounded-lg mb-3"
-            required
-          />
-          <button
-            type="submit"
-            className="w-full bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700"
-          >
-            Crear grupo
-          </button>
-        </form>
-      </div>
-      
-      {/* Mis grupos */}
-      <div className="bg-white rounded-xl shadow-sm p-6">
-        <h2 className="font-semibold text-lg mb-4">👥 Mis grupos</h2>
-        
-        {groups.length === 0 ? (
-          <p className="text-gray-500">No perteneces a ningún grupo</p>
-        ) : (
-          <div className="space-y-2">
-            {groups.map(group => (
-              <button
-                key={group.id}
-                onClick={() => onSelectGroup(group)}
-                className={`w-full text-left p-3 rounded-lg transition-colors ${
-                  selectedGroup?.id === group.id
-                    ? 'bg-blue-100 border-blue-500 border'
-                    : 'bg-gray-50 hover:bg-gray-100'
-                }`}
-              >
-                <p className="font-medium">{group.name}</p>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-      
-      {/* Miembros del grupo seleccionado */}
-      {selectedGroup && (
-        <div className="md:col-span-2 bg-white rounded-xl shadow-sm p-6">
-          <h2 className="font-semibold text-lg mb-4">
-            Miembros de "{selectedGroup.name}"
-          </h2>
-          
-          <div className="grid md:grid-cols-2 gap-6">
-            <div>
-              <h3 className="text-sm font-medium text-gray-600 mb-2">Miembros actuales</h3>
-              <div className="space-y-2">
-                {members.map(member => (
-                  <div key={member.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded-lg">
-                    <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-medium">
-                      {(member.name || member.email)[0].toUpperCase()}
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">{member.name || 'Sin nombre'}</p>
-                      <p className="text-xs text-gray-500">{member.email}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            
-            <div>
-              <h3 className="text-sm font-medium text-gray-600 mb-2">Invitar miembro</h3>
-              <form onSubmit={(e) => {
-                e.preventDefault();
-                if (inviteEmail.trim()) {
-                  onInviteMember(inviteEmail.trim());
-                  setInviteEmail('');
-                }
-              }}>
-                <input
-                  type="email"
-                  placeholder="Email del usuario"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg mb-2"
-                  required
-                />
+              {/* Acciones */}
+              <div className="flex flex-wrap gap-2 justify-end">
                 <button
-                  type="submit"
-                  className="w-full bg-green-600 text-white py-2 rounded-lg font-medium hover:bg-green-700"
+                  onClick={renameSelectedCategory}
+                  disabled={selectedCategoryKeys.length !== 1}
+                  className={`px-4 py-2 rounded-lg ${
+                    selectedCategoryKeys.length === 1
+                      ? 'bg-blue-600 text-white hover:bg-blue-700'
+                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  }`}
                 >
-                  Enviar invitación
+                  Renombrar
                 </button>
-              </form>
-              <p className="text-xs text-gray-400 mt-2">
-                El usuario debe estar registrado en la aplicación
-              </p>
+                <button
+                  onClick={deleteSelectedCategories}
+                  disabled={selectedCategoryKeys.length === 0}
+                  className={`px-4 py-2 rounded-lg ${
+                    selectedCategoryKeys.length > 0
+                      ? 'bg-red-600 text-white hover:bg-red-700'
+                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                  }`}
+                >
+                  Eliminar
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Modal: Gasto Manual */}
+        {showManualExpenseModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-xl text-gray-800">Nuevo Gasto Manual</h3>
+                <button
+                  onClick={() => setShowManualExpenseModal(false)}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
+                  <input
+                    type="text"
+                    placeholder="DD/MM/YYYY"
+                    value={manualExpense.date}
+                    onChange={(e) => setManualExpense({ ...manualExpense, date: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: Compra en supermercado"
+                    value={manualExpense.concept}
+                    onChange={(e) => setManualExpense({ ...manualExpense, concept: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Monto (€)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={manualExpense.amount}
+                    onChange={(e) => setManualExpense({ ...manualExpense, amount: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
+                  <select
+                    value={manualExpense.category}
+                    onChange={(e) => setManualExpense({ ...manualExpense, category: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500"
+                  >
+                    {Object.keys(categories).sort().map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Persona</label>
+                  <select
+                    value={manualExpense.person}
+                    onChange={(e) => setManualExpense({ ...manualExpense, person: e.target.value })}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500"
+                  >
+                    <option value="Nicolás">Nicolás</option>
+                    <option value="Connie">Connie</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  onClick={saveManualExpense}
+                  disabled={saving}
+                  className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg transition-all disabled:opacity-50"
+                >
+                  <Save className="w-5 h-5" />
+                  {saving ? 'Guardando...' : 'Guardar Gasto'}
+                </button>
+                <button
+                  onClick={() => setShowManualExpenseModal(false)}
+                  className="px-6 py-3 rounded-xl font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
-}
+};
+
+export default ExpenseTrackerApp;
