@@ -538,11 +538,18 @@ const ExpenseTrackerApp = () => {
           // Extraer monto de columna Importe (4)
           let amount = 0;
           if (importeCell !== undefined && importeCell !== null && importeCell !== '') {
-            // Manejar formato español: -33,36 o 1.234,56
-            let amountStr = String(importeCell).replace(/\s/g, '');
-            // Quitar puntos de miles y cambiar coma decimal por punto
-            amountStr = amountStr.replace(/\./g, '').replace(',', '.');
-            amount = parseFloat(amountStr);
+            // Si XLSX ya lo parseó como número, usarlo directamente
+            if (typeof importeCell === 'number') {
+              amount = importeCell;
+            } else {
+              // Si es string, manejar formato español: -33,36 o 1.234,56
+              let amountStr = String(importeCell).replace(/\s/g, '');
+              // Solo quitar puntos si hay coma (formato español con miles)
+              if (amountStr.includes(',')) {
+                amountStr = amountStr.replace(/\./g, '').replace(',', '.');
+              }
+              amount = parseFloat(amountStr);
+            }
           }
           
           if (isNaN(amount)) continue;
