@@ -313,7 +313,7 @@ const ExpenseTrackerApp = () => {
         .from('expenses')
         .update({ ...updates, updated_at: new Date().toISOString() })
         .eq('id', id)
-        .eq('group_id', groupId) // Seguridad extra
+        .eq('group_id', groupId)
         .select()
         .single();
 
@@ -396,7 +396,7 @@ const ExpenseTrackerApp = () => {
   };
 
   // =====================================================
-  // MANEJO DE ARCHIVOS EXCEL
+  // MANEJO DE ARCHIVOS EXCEL - SANTANDER Y BBVA
   // =====================================================
   const parseExcel = async (file) => {
     if (!user || groupId === null) {
@@ -412,82 +412,193 @@ const ExpenseTrackerApp = () => {
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
 
-      // Buscar fila de encabezado
+      // =====================================================
+      // DETECTAR TIPO DE BANCO
+      // =====================================================
+      let bankType = 'UNKNOWN';
       let headerRowIndex = -1;
-      for (let i = 0; i < jsonData.length; i++) {
+
+      for (let i = 0; i < Math.min(jsonData.length, 15); i++) {
         const row = jsonData[i];
-        if (row.some(cell => 
-          String(cell).includes('FECHA') || 
-          String(cell).includes('CONCEPTO') ||
-          String(cell).includes('IMPORTE')
-        )) {
+        const rowStr = row.map(cell => String(cell).toUpperCase()).join(' ');
+        
+        // Detectar Santander: tiene "FECHA OPERACIÓN" o "IMPORTE EUR"
+        if (rowStr.includes('FECHA OPERACIÓN') || rowStr.includes('IMPORTE EUR')) {
+          bankType = 'SANTANDER';
+          headerRowIndex = i;
+          break;
+        }
+        
+        // Detectar BBVA: tiene "Fecha" y "Nombre" o "Importe" y "Divisa"
+        if ((rowStr.includes('FECHA') && rowStr.includes('NOMBRE')) || 
+            (rowStr.includes('IMPORTE') && rowStr.includes('DIVISA'))) {
+          bankType = 'BBVA';
           headerRowIndex = i;
           break;
         }
       }
 
+      // Fallback: buscar cualquier fila con FECHA/CONCEPTO/IMPORTE
       if (headerRowIndex === -1) {
-        alert('No se pudo encontrar el formato correcto del extracto bancario');
+        for (let i = 0; i < jsonData.length; i++) {
+          const row = jsonData[i];
+          if (row.some(cell => 
+            String(cell).toUpperCase().includes('FECHA') || 
+            String(cell).toUpperCase().includes('CONCEPTO') ||
+            String(cell).toUpperCase().includes('IMPORTE')
+          )) {
+            headerRowIndex = i;
+            bankType = 'SANTANDER';
+            break;
+          }
+        }
+      }
+
+      if (headerRowIndex === -1) {
+        alert('No se pudo detectar el formato del extracto bancario.\nFormatos soportados: Santander, BBVA');
+        setUploading(false);
         return;
       }
 
-      // Detectar titular
+      console.log(`📊 Banco detectado: ${bankType}, Header en fila: ${headerRowIndex}`);
+
+      // =====================================================
+      // DETECTAR TITULAR
+      // =====================================================
       let titular = 'Nicolás';
       for (let i = 0; i < headerRowIndex; i++) {
         const row = jsonData[i];
         const rowStr = row.join(' ').toUpperCase();
-        if (rowStr.includes('CONNIE')) {
+        if (rowStr.includes('CONNIE') || rowStr.includes('LAURA') || rowStr.includes('AGUSTINA')) {
           titular = 'Connie';
           break;
         }
       }
 
-      // Procesar filas de gastos
+      // =====================================================
+      // PROCESAR SEGÚN TIPO DE BANCO
+      // =====================================================
       const newExpenses = [];
-      for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
-        const row = jsonData[i];
-        if (!row[0] || !row[2] || row[3] === undefined) continue;
 
-        const amountRaw = parseFloat(row[3]);
-        if (isNaN(amountRaw) || amountRaw >= 0) continue; // Solo gastos (negativos)
+      if (bankType === 'SANTANDER') {
+        // SANTANDER: Columnas = [FECHA OPERACIÓN, FECHA VALOR, CONCEPTO, IMPORTE EUR, SALDO]
+        for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
+          const row = jsonData[i];
+          if (!row[0] || !row[2] || row[3] === undefined) continue;
 
-        const amount = Math.abs(amountRaw);
-        const concept = String(row[2]);
-        
-        // Formatear fecha
-        let dateStr = row[0];
-        if (dateStr instanceof Date) {
-          dateStr = dateStr.toLocaleDateString('es-ES');
-        } else if (typeof dateStr === 'number') {
-          // Excel serial date
-          const date = new Date((dateStr - 25569) * 86400 * 1000);
-          dateStr = date.toLocaleDateString('es-ES');
+          const amountRaw = parseFloat(String(row[3]).replace(',', '.'));
+          if (isNaN(amountRaw) || amountRaw >= 0) continue;
+
+          const amount = Math.abs(amountRaw);
+          const concept = String(row[2]).trim();
+
+          let dateStr = row[0];
+          if (dateStr instanceof Date) {
+            dateStr = dateStr.toLocaleDateString('es-ES');
+          } else if (typeof dateStr === 'number') {
+            const date = new Date((dateStr - 25569) * 86400 * 1000);
+            dateStr = date.toLocaleDateString('es-ES');
+          }
+
+          newExpenses.push({
+            date: dateStr,
+            concept,
+            amount,
+            category: categorizeExpense(concept),
+            person: detectPerson(concept, titular),
+          });
         }
 
-        newExpenses.push({
-          date: dateStr,
-          concept,
-          amount,
-          category: categorizeExpense(concept),
-          person: detectPerson(concept, titular),
-        });
+      } else if (bankType === 'BBVA') {
+        // BBVA: Columnas = [vacía, Fecha, Nombre/Descripción, Importe, Divisa]
+        for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
+          const row = jsonData[i];
+          
+          const dateCell = row[1];
+          const descriptionCell = String(row[2] || '').trim();
+          let amountCell = row[3];
+          
+          if (!dateCell || !descriptionCell) continue;
+          
+          // Saltar mensajes informativos
+          const skipKeywords = [
+            'extracto', 'actualiza', 'términos', 'condiciones', 
+            'plan 760', 'ya tienes tu'
+          ];
+          if (skipKeywords.some(kw => descriptionCell.toLowerCase().includes(kw))) {
+            continue;
+          }
+          
+          // Saltar transferencias enviadas
+          if (descriptionCell.toLowerCase().includes('transferencia') && 
+              descriptionCell.toLowerCase().includes('enviada')) {
+            continue;
+          }
+
+          // Extraer monto
+          let amount = 0;
+          if (amountCell !== undefined && amountCell !== null && amountCell !== '') {
+            amount = parseFloat(String(amountCell).replace(',', '.'));
+          }
+          
+          // Si no hay monto en columna, extraer del texto
+          if (isNaN(amount) || amount === 0) {
+            const match = descriptionCell.match(/(\d+[,.]?\d*)\s*€?\s*$/);
+            if (match) {
+              amount = parseFloat(match[1].replace(',', '.'));
+            }
+          }
+          
+          if (isNaN(amount) || amount <= 0) continue;
+
+          let dateStr = dateCell;
+          if (dateCell instanceof Date) {
+            dateStr = dateCell.toLocaleDateString('es-ES');
+          }
+
+          // Limpiar concepto
+          let concept = descriptionCell
+            .replace(/\d+[,.]?\d*\s*€?\s*$/, '')
+            .replace(/adeudo de/i, '')
+            .trim();
+          
+          if (concept.length < 3) {
+            concept = descriptionCell;
+          }
+
+          newExpenses.push({
+            date: dateStr,
+            concept,
+            amount,
+            category: categorizeExpense(concept),
+            person: detectPerson(concept, titular),
+          });
+        }
       }
 
+      // =====================================================
+      // VALIDAR Y GUARDAR
+      // =====================================================
       if (newExpenses.length === 0) {
-        alert('No se encontraron gastos en el archivo');
+        alert(`No se encontraron gastos en el archivo (${bankType}).\nVerifica que el extracto tenga movimientos.`);
+        setUploading(false);
         return;
       }
+
+      console.log(`✅ ${newExpenses.length} gastos encontrados de ${bankType}`);
 
       // Filtrar duplicados
       const existingKeys = new Set(
         expenses.map(e => `${e.date}-${e.concept}-${e.amount}`)
       );
+      
       const uniqueNew = newExpenses.filter(
         e => !existingKeys.has(`${e.date}-${e.concept}-${e.amount}`)
       );
 
       if (uniqueNew.length === 0) {
         alert('Todos los gastos del archivo ya existen');
+        setUploading(false);
         return;
       }
 
@@ -523,7 +634,7 @@ const ExpenseTrackerApp = () => {
       });
 
       setExpenses(updatedExpenses);
-      alert(`✅ ${uniqueNew.length} nuevos gastos añadidos`);
+      alert(`✅ ${uniqueNew.length} nuevos gastos añadidos (${bankType})`);
 
     } catch (error) {
       console.error('Error procesando archivo:', error);
@@ -537,7 +648,7 @@ const ExpenseTrackerApp = () => {
     const file = e.target.files?.[0];
     if (file) {
       parseExcel(file);
-      e.target.value = ''; // Reset input
+      e.target.value = '';
     }
   };
 
@@ -568,7 +679,6 @@ const ExpenseTrackerApp = () => {
     const savedExpense = await saveExpenseToDb(manualExpense);
     
     if (savedExpense) {
-      // Actualizar estado local
       const updatedExpenses = [savedExpense, ...expenses].sort((a, b) => {
         const dateA = a.date.split('/').reverse().join('-');
         const dateB = b.date.split('/').reverse().join('-');
@@ -685,17 +795,14 @@ const ExpenseTrackerApp = () => {
     
     if (!newName || newName.trim() === '' || newName === oldName) return;
 
-    // Actualizar categorías
     const updatedCategories = { ...categories };
     updatedCategories[newName] = updatedCategories[oldName] || [];
     delete updatedCategories[oldName];
 
-    // Actualizar gastos con la nueva categoría
     const updatedExpenses = expenses.map(exp =>
       exp.category === oldName ? { ...exp, category: newName } : exp
     );
 
-    // Actualizar en batch en la base de datos
     const expensesToUpdate = expenses.filter(exp => exp.category === oldName);
     if (expensesToUpdate.length > 0) {
       await supabase
@@ -723,7 +830,6 @@ const ExpenseTrackerApp = () => {
     const updatedCategories = { ...categories };
     selectedCategoryKeys.forEach(k => delete updatedCategories[k]);
 
-    // Actualizar gastos
     const expensesToUpdate = expenses.filter(exp => selectedCategoryKeys.includes(exp.category));
     if (expensesToUpdate.length > 0) {
       await supabase
