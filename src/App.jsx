@@ -63,6 +63,14 @@ const DEFAULT_CATEGORIES = {
 const COLORS = ['#8b5cf6', '#ec4899', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#14b8a6', '#f97316'];
 
 // =====================================================
+// EMAILS AUTORIZADOS
+// =====================================================
+const ALLOWED_EMAILS = [
+  'nicogaveglio@gmail.com',
+  'constanzabetelu@gmail.com',
+];
+
+// =====================================================
 // COMPONENTE PRINCIPAL
 // =====================================================
 const ExpenseTrackerApp = () => {
@@ -109,20 +117,38 @@ const ExpenseTrackerApp = () => {
   // AUTENTICACIÓN
   // =====================================================
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    const validateAndSetUser = async (session) => {
+      if (session?.user) {
+        const email = session.user.email?.toLowerCase();
+        if (!ALLOWED_EMAILS.map(e => e.toLowerCase()).includes(email)) {
+          console.log('❌ Email no autorizado:', email);
+          alert('Acceso no autorizado. Esta aplicación es privada.');
+          await supabase.auth.signOut();
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+      }
       setUser(session?.user ?? null);
+    };
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      validateAndSetUser(session);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('Auth event:', event);
-      setUser(session?.user ?? null);
       
       if (!session) {
+        setUser(null);
         setExpenses([]);
         setGroupId(null);
         setIsInitialized(false);
         setLoading(false);
+        return;
       }
+      
+      validateAndSetUser(session);
     });
 
     return () => subscription.unsubscribe();
