@@ -109,18 +109,15 @@ const ExpenseTrackerApp = () => {
   // AUTENTICACIÓN
   // =====================================================
   useEffect(() => {
-    // Obtener sesión inicial
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user ?? null);
     });
 
-    // Escuchar cambios de autenticación
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       console.log('Auth event:', event);
       setUser(session?.user ?? null);
       
       if (!session) {
-        // Limpiar estado cuando se cierra sesión
         setExpenses([]);
         setGroupId(null);
         setIsInitialized(false);
@@ -144,7 +141,6 @@ const ExpenseTrackerApp = () => {
       try {
         console.log('🔍 Buscando grupo para usuario:', user.id);
         
-        // Buscar grupo donde el usuario está incluido
         const { data: groupData, error: groupError } = await supabase
           .from('groups')
           .select('id, name')
@@ -160,7 +156,6 @@ const ExpenseTrackerApp = () => {
           console.log('✅ Grupo encontrado:', groupData);
           setGroupId(groupData.id);
         } else {
-          // Crear nuevo grupo para el usuario
           console.log('📝 Creando nuevo grupo...');
           const { data: newGroup, error: createError } = await supabase
             .from('groups')
@@ -198,7 +193,6 @@ const ExpenseTrackerApp = () => {
       setLoading(true);
       
       try {
-        // Cargar gastos
         console.log('📊 Cargando gastos para grupo:', groupId);
         const { data: expensesData, error: expensesError } = await supabase
           .from('expenses')
@@ -213,7 +207,6 @@ const ExpenseTrackerApp = () => {
           setExpenses(expensesData || []);
         }
 
-        // Cargar categorías personalizadas
         const { data: categoriesData } = await supabase
           .from('categories')
           .select('categories')
@@ -429,9 +422,9 @@ const ExpenseTrackerApp = () => {
           break;
         }
         
-        // Detectar BBVA: tiene "Fecha" y "Nombre" o "Importe" y "Divisa"
-        if ((rowStr.includes('FECHA') && rowStr.includes('NOMBRE')) || 
-            (rowStr.includes('IMPORTE') && rowStr.includes('DIVISA'))) {
+        // Detectar BBVA: tiene "F.VALOR" o ("CONCEPTO" y "MOVIMIENTO")
+        if (rowStr.includes('F.VALOR') || rowStr.includes('F. VALOR') ||
+            (rowStr.includes('CONCEPTO') && rowStr.includes('MOVIMIENTO'))) {
           bankType = 'BBVA';
           headerRowIndex = i;
           break;
@@ -510,60 +503,84 @@ const ExpenseTrackerApp = () => {
         }
 
       } else if (bankType === 'BBVA') {
-        // BBVA: Columnas = [vacía, Fecha, Nombre/Descripción, Importe, Divisa]
+        // BBVA: Columnas = [vacía(0), F.Valor(1), Fecha(2), Concepto(3), Movimiento(4), Importe(5), Divisa(6), Observaciones(7)]
         for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
           const row = jsonData[i];
           
-          const dateCell = row[1];
-          const descriptionCell = String(row[2] || '').trim();
-          let amountCell = row[3];
+          // Usar F.Valor (col 1) o Fecha (col 2)
+          const fValorCell = row[1];
+          const fechaCell = row[2];
+          const dateCell = fValorCell || fechaCell;
           
-          if (!dateCell || !descriptionCell) continue;
+          const conceptoCell = String(row[3] || '').trim();
+          const movimientoCell = String(row[4] || '').trim();
+          let importeCell = row[5];
+          
+          if (!dateCell || !conceptoCell) continue;
           
           // Saltar mensajes informativos
           const skipKeywords = [
             'extracto', 'actualiza', 'términos', 'condiciones', 
             'plan 760', 'ya tienes tu'
           ];
-          if (skipKeywords.some(kw => descriptionCell.toLowerCase().includes(kw))) {
+          if (skipKeywords.some(kw => conceptoCell.toLowerCase().includes(kw))) {
             continue;
           }
           
           // Saltar transferencias enviadas
-          if (descriptionCell.toLowerCase().includes('transferencia') && 
-              descriptionCell.toLowerCase().includes('enviada')) {
+          if (conceptoCell.toLowerCase().includes('transferencia') && 
+              conceptoCell.toLowerCase().includes('enviada')) {
             continue;
           }
 
-          // Extraer monto
+          // Extraer monto de columna Importe (5)
           let amount = 0;
-          if (amountCell !== undefined && amountCell !== null && amountCell !== '') {
-            amount = parseFloat(String(amountCell).replace(',', '.'));
+          if (importeCell !== undefined && importeCell !== null && importeCell !== '') {
+            // Manejar formato español: 1.234,56 o -1.234,56
+            let amountStr = String(importeCell).replace(/\s/g, '');
+            amountStr = amountStr.replace(/\./g, '').replace(',', '.');
+            amount = parseFloat(amountStr);
           }
           
-          // Si no hay monto en columna, extraer del texto
+          // Si no hay monto en columna Importe, intentar extraer del concepto
           if (isNaN(amount) || amount === 0) {
-            const match = descriptionCell.match(/(\d+[,.]?\d*)\s*€?\s*$/);
+            const match = conceptoCell.match(/(-?\d+[.,]?\d*)\s*€?\s*$/);
             if (match) {
-              amount = parseFloat(match[1].replace(',', '.'));
+              let matchStr = match[1].replace(/\./g, '').replace(',', '.');
+              amount = parseFloat(matchStr);
             }
           }
           
-          if (isNaN(amount) || amount <= 0) continue;
+          if (isNaN(amount)) continue;
+          
+          // BBVA puede mostrar gastos como negativos o positivos según el extracto
+          const esGasto = amount < 0 || 
+            movimientoCell.toLowerCase().includes('cargo') ||
+            movimientoCell.toLowerCase().includes('pago') ||
+            movimientoCell.toLowerCase().includes('compra') ||
+            movimientoCell.toLowerCase().includes('adeudo');
+          
+          if (!esGasto && amount > 0) continue;
+          
+          amount = Math.abs(amount);
+          if (amount <= 0) continue;
 
           let dateStr = dateCell;
           if (dateCell instanceof Date) {
             dateStr = dateCell.toLocaleDateString('es-ES');
+          } else if (typeof dateCell === 'number') {
+            const date = new Date((dateCell - 25569) * 86400 * 1000);
+            dateStr = date.toLocaleDateString('es-ES');
           }
 
           // Limpiar concepto
-          let concept = descriptionCell
-            .replace(/\d+[,.]?\d*\s*€?\s*$/, '')
+          let concept = conceptoCell
+            .replace(/(-?\d+[.,]?\d*)\s*€?\s*$/, '')
             .replace(/adeudo de/i, '')
             .trim();
           
           if (concept.length < 3) {
-            concept = descriptionCell;
+            concept = conceptoCell;
           }
 
           newExpenses.push({
