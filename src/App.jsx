@@ -499,7 +499,7 @@ const ExpenseTrackerApp = () => {
       for (let i = 0; i < headerRowIndex; i++) {
         const row = jsonData[i];
         const rowStr = row.join(' ').toUpperCase();
-        if (rowStr.includes('CONNIE') || rowStr.includes('LAURA') || rowStr.includes('AGUSTINA')) {
+        if (rowStr.includes('CONNIE') || rowStr.includes('CONSTANZA') || rowStr.includes('LAURA') || rowStr.includes('AGUSTINA') || rowStr.includes('BETELU')) {
           titular = 'Connie';
           break;
         }
