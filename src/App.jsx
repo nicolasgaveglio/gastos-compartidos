@@ -33,10 +33,10 @@ const DEFAULT_CATEGORIES = {
   'Uber/taxi': ['uber', 'taxi', 'cabify', 'bolt', 'yego'],
   Supermercado: [
     'mercadona', 'carrefour', 'lidl', 'aldi', 'dia', 'caprabo', 'bonpreu', 
-    'condis', 'supermercat', 'kachafruit', 'greensland', 'cash and carry',
+    'condis', 'supermercat', 'kachafruit', 'greensland', 'cash and carry','sempre obert'
   ],
   Suplementos: ['suplemento', 'proteina', 'vitamina', 'myprotein'],
-  Salidas: ['restaurante', 'bar ', 'popis', 'fornet', 'canigo', 'bonastre', 'bravas', 'foix', 'pedreta', 'pren algo'],
+  Salidas: ['restauran', 'bar ', 'popis', 'fornet', 'canigo', 'bonastre', 'bravas', 'foix', 'pedreta', 'pren algo', 'lucciano'],
   Ropa: ['zara', 'h&m', 'mango', 'pull&bear', 'bershka', 'stradivarius', 'oysho', 'massimo dutti', 'uniqlo'],
   Limpieza: ['limpieza', 'detergente', 'lejia'],
   'Peluquería/Barbería': ['peluqueria', 'barberia', 'salon', 'corte pelo'],
