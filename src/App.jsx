@@ -27,17 +27,21 @@ const DEFAULT_CATEGORIES = {
   Agua: ['agua', 'aguas', 'aigues'],
   Celular: ['telefonica moviles', 'movistar', 'vodafone', 'orange', 'yoigo', 'celular'],
   Internet: ['telefonica de espana', 'fijo', 'internet', 'fibra'],
-  'Casa': ['ikea', 'leroy', 'media markt', 'worten', 'el corte ingles','Ferreteria', 'El millor preu' ],
+  'Casa': ['ikea', 'leroy', 'media markt', 'worten', 'el corte ingles', 'ferreteria', 'el millor preu'],
   'Transporte público': ['tmb', 't mobilitat', 'renfe', 'metro', 'bus'],
   Bicing: ['bicing'],
   'Uber/taxi': ['uber', 'taxi', 'cabify', 'bolt', 'yego'],
   Supermercado: [
     'mercadona', 'carrefour', 'lidl', 'aldi', 'dia', 'caprabo', 'bonpreu', 
-    'condis', 'supermercat', 'kachafruit', 'greensland', 'cash and carry','beauty','Sempre obert'
+    'condis', 'supermercat', 'kachafruit', 'greensland', 'cash and carry', 'beauty', 'sempre obert',
+    'botiga'
   ],
   Suplementos: ['suplemento', 'proteina', 'vitamina', 'myprotein'],
-  Salidas: ['restauran', 'bar ', 'popis', 'fornet', 'canigo', 'bonastre', 'bravas', 'foix', 'pedreta', 'pren algo','El tomas de sarria',
-    'Lucciano', 'Cem tres' ],
+  Salidas: [
+    'restauran', 'bar ', 'popis', 'fornet', 'canigo', 'bonastre', 'bravas', 'foix', 'pedreta', 
+    'pren algo', 'el tomas de sarria', 'tomas de sarria', 'lucciano', 'cem tres', 'tragaluz', 
+    'dellaostia', 'yuki'
+  ],
   Ropa: ['zara', 'h&m', 'mango', 'pull&bear', 'bershka', 'stradivarius', 'oysho', 'massimo dutti', 'uniqlo'],
   Limpieza: ['limpieza', 'detergente', 'lejia'],
   'Peluquería/Barbería': ['peluqueria', 'barberia', 'salon', 'corte pelo'],
@@ -51,8 +55,8 @@ const DEFAULT_CATEGORIES = {
   'Seguro médico': ['seguro medico', 'axa', 'sanitas', 'mapfre', 'planeta seguros'],
   Gimnasio: ['gimnasio', 'gym', 'fitness', 'crossfit'],
   'Consultas de médicos/odontólogos': ['medico', 'doctor', 'clinica', 'dentista', 'odontologo'],
-  'Farmacia/Medicamentos': ['farmacia', 'medicamento', 'parafarmacia'],
-  Pasajes: ['vueling', 'ryanair', 'iberia', 'renfe', 'bus', 'avion', 'tren'],
+  'Farmacia/Medicamentos': ['farmacia', 'medicamento', 'parafarmacia', 'fcia'],
+  Pasajes: ['vueling', 'ryanair', 'iberia', 'renfe', 'avion', 'tren'],
   Alojamiento: ['booking', 'airbnb', 'hotel', 'hostal'],
   Comidas: ['comida', 'meal', 'food'],
   Recuerdos: ['souvenir', 'recuerdo', 'regalo'],
