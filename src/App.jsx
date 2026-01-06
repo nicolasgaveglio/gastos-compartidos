@@ -521,23 +521,44 @@ const ExpenseTrackerApp = () => {
         }
 
       } else if (bankType === 'BBVA') {
-        // BBVA: Columnas = [vacía(0), F.Valor(1), Fecha(2), Concepto(3), Movimiento(4), Importe(5), Divisa(6), Observaciones(7)]
-        console.log('🔍 Procesando BBVA, total filas:', jsonData.length);
+        // BBVA: Detectar dinámicamente las columnas del header
+        const headerRow = jsonData[headerRowIndex];
+        console.log('🔍 Header row:', headerRow);
+        
+        // Encontrar índices de columnas
+        let colFValor = -1, colFecha = -1, colConcepto = -1, colMovimiento = -1, colImporte = -1;
+        
+        for (let c = 0; c < headerRow.length; c++) {
+          const cellValue = String(headerRow[c] || '').toUpperCase().trim();
+          if (cellValue.includes('F.VALOR') || cellValue === 'F. VALOR' || cellValue === 'F VALOR') colFValor = c;
+          else if (cellValue === 'FECHA') colFecha = c;
+          else if (cellValue === 'CONCEPTO') colConcepto = c;
+          else if (cellValue === 'MOVIMIENTO') colMovimiento = c;
+          else if (cellValue === 'IMPORTE') colImporte = c;
+        }
+        
+        console.log(`📊 Columnas detectadas: F.Valor=${colFValor}, Fecha=${colFecha}, Concepto=${colConcepto}, Movimiento=${colMovimiento}, Importe=${colImporte}`);
+        
+        // Verificar que encontramos las columnas necesarias
+        if (colConcepto === -1 || colImporte === -1) {
+          console.error('❌ No se encontraron columnas necesarias');
+          alert('Error: No se pudieron detectar las columnas del extracto BBVA');
+          setUploading(false);
+          return;
+        }
+        
+        // Usar F.Valor o Fecha para la fecha
+        const colDate = colFValor !== -1 ? colFValor : colFecha;
         
         for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
           const row = jsonData[i];
           
-          // F.Valor está en columna 1, Fecha en columna 2
-          const fValorCell = row[1];
-          const fechaCell = row[2];
-          const dateCell = fValorCell || fechaCell;
+          const dateCell = row[colDate];
+          const conceptoCell = String(row[colConcepto] || '').trim();
+          const movimientoCell = colMovimiento !== -1 ? String(row[colMovimiento] || '').trim() : '';
+          let importeCell = row[colImporte];
           
-          // Concepto en columna 3, Movimiento en columna 4, Importe en columna 5
-          const conceptoCell = String(row[3] || '').trim();
-          const movimientoCell = String(row[4] || '').trim();
-          let importeCell = row[5];
-          
-          console.log(`Fila ${i}: date=${dateCell}, concepto=${conceptoCell?.substring(0,20)}, importe=${importeCell}`);
+          console.log(`Fila ${i}: date=${dateCell}, concepto=${conceptoCell?.substring(0,20)}, mov=${movimientoCell?.substring(0,15)}, importe=${importeCell}`);
           
           if (!dateCell || !conceptoCell) {
             console.log('  -> SKIP: sin fecha o concepto');
@@ -562,14 +583,12 @@ const ExpenseTrackerApp = () => {
             continue;
           }
 
-          // Extraer monto de columna Importe (5)
+          // Extraer monto
           let amount = 0;
           if (importeCell !== undefined && importeCell !== null && importeCell !== '') {
-            // Si XLSX ya lo parseó como número, usarlo directamente
             if (typeof importeCell === 'number') {
               amount = importeCell;
             } else {
-              // Si es string, manejar formato español: -33,36 o 1.234,56
               let amountStr = String(importeCell).replace(/\s/g, '');
               if (amountStr.includes(',')) {
                 amountStr = amountStr.replace(/\./g, '').replace(',', '.');
@@ -585,7 +604,7 @@ const ExpenseTrackerApp = () => {
             continue;
           }
           
-          // En BBVA los gastos vienen como negativos (-33,36)
+          // En BBVA los gastos vienen como negativos
           if (amount >= 0) {
             console.log('  -> SKIP: amount >= 0');
             continue;
