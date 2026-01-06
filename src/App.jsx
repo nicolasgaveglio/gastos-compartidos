@@ -522,6 +522,8 @@ const ExpenseTrackerApp = () => {
 
       } else if (bankType === 'BBVA') {
         // BBVA: Columnas = [vacía(0), F.Valor(1), Fecha(2), Concepto(3), Movimiento(4), Importe(5), Divisa(6), Observaciones(7)]
+        console.log('🔍 Procesando BBVA, total filas:', jsonData.length);
+        
         for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
           const row = jsonData[i];
           
@@ -535,7 +537,12 @@ const ExpenseTrackerApp = () => {
           const movimientoCell = String(row[4] || '').trim();
           let importeCell = row[5];
           
-          if (!dateCell || !conceptoCell) continue;
+          console.log(`Fila ${i}: date=${dateCell}, concepto=${conceptoCell?.substring(0,20)}, importe=${importeCell}`);
+          
+          if (!dateCell || !conceptoCell) {
+            console.log('  -> SKIP: sin fecha o concepto');
+            continue;
+          }
           
           // Saltar mensajes informativos
           const skipKeywords = [
@@ -543,6 +550,7 @@ const ExpenseTrackerApp = () => {
             'plan 760', 'ya tienes tu', 'últimos movimientos'
           ];
           if (skipKeywords.some(kw => conceptoCell.toLowerCase().includes(kw))) {
+            console.log('  -> SKIP: keyword informativo');
             continue;
           }
           
@@ -550,6 +558,7 @@ const ExpenseTrackerApp = () => {
           if (conceptoCell.toLowerCase().includes('transferencia') && 
               (movimientoCell.toLowerCase().includes('para constanza') || 
                movimientoCell.toLowerCase().includes('para nicolas'))) {
+            console.log('  -> SKIP: transferencia propia');
             continue;
           }
 
@@ -569,10 +578,18 @@ const ExpenseTrackerApp = () => {
             }
           }
           
-          if (isNaN(amount)) continue;
+          console.log(`  -> amount parseado: ${amount}`);
+          
+          if (isNaN(amount)) {
+            console.log('  -> SKIP: amount es NaN');
+            continue;
+          }
           
           // En BBVA los gastos vienen como negativos (-33,36)
-          if (amount >= 0) continue;
+          if (amount >= 0) {
+            console.log('  -> SKIP: amount >= 0');
+            continue;
+          }
           
           amount = Math.abs(amount);
           if (amount <= 0) continue;
@@ -595,6 +612,8 @@ const ExpenseTrackerApp = () => {
             concept = conceptoCell;
           }
 
+          console.log(`  -> ✅ GASTO VALIDO: ${concept.substring(0,30)} = €${amount}`);
+          
           newExpenses.push({
             date: dateStr,
             concept,
@@ -603,6 +622,8 @@ const ExpenseTrackerApp = () => {
             person: currentPerson,
           });
         }
+        
+        console.log(`📊 Total gastos encontrados: ${newExpenses.length}`);
       }
 
       // =====================================================
