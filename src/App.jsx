@@ -404,24 +404,17 @@ const ExpenseTrackerApp = () => {
     for (const [category, keywords] of Object.entries(categories)) {
       if (category === 'Otro') continue;
       for (const keyword of keywords) {
-        if (conceptLower.includes(keyword)) return category;
+        if (conceptLower.includes(keyword.toLowerCase())) return category;
       }
     }
     return 'Otro';
   }, [categories]);
 
-  const detectPerson = useCallback((concept, titular) => {
-    // Si el concepto menciona específicamente a alguien, usar ese nombre
-    if (concept.toLowerCase().includes('connie')) return 'Connie';
-    if (concept.toLowerCase().includes('nicolás') || concept.toLowerCase().includes('nicolas')) return 'Nicolás';
-    
-    // Si hay titular del extracto, usarlo
-    if (titular) return titular;
-    
-    // Por defecto, usar el nombre del usuario logueado
-    if (user?.email?.toLowerCase().includes('constanzabetelu')) return 'Connie';
-    if (user?.email?.toLowerCase().includes('nicogaveglio')) return 'Nicolás';
-    
+  // Detectar persona basándose en el usuario logueado
+  const getPersonFromUser = useCallback(() => {
+    const email = user?.email?.toLowerCase() || '';
+    if (email.includes('constanzabetelu')) return 'Connie';
+    if (email.includes('nicogaveglio')) return 'Nicolás';
     return 'Nicolás'; // Fallback
   }, [user]);
 
@@ -493,22 +486,10 @@ const ExpenseTrackerApp = () => {
       console.log(`📊 Banco detectado: ${bankType}, Header en fila: ${headerRowIndex}`);
 
       // =====================================================
-      // DETECTAR TITULAR
-      // =====================================================
-      let titular = 'Nicolás';
-      for (let i = 0; i < headerRowIndex; i++) {
-        const row = jsonData[i];
-        const rowStr = row.join(' ').toUpperCase();
-        if (rowStr.includes('CONNIE') || rowStr.includes('CONSTANZA') || rowStr.includes('LAURA') || rowStr.includes('AGUSTINA') || rowStr.includes('BETELU')) {
-          titular = 'Connie';
-          break;
-        }
-      }
-
-      // =====================================================
       // PROCESAR SEGÚN TIPO DE BANCO
       // =====================================================
       const newExpenses = [];
+      const currentPerson = getPersonFromUser();
 
       if (bankType === 'SANTANDER') {
         // SANTANDER: Columnas = [FECHA OPERACIÓN, FECHA VALOR, CONCEPTO, IMPORTE EUR, SALDO]
@@ -535,25 +516,24 @@ const ExpenseTrackerApp = () => {
             concept,
             amount,
             category: categorizeExpense(concept),
-            person: detectPerson(concept, titular),
+            person: currentPerson,
           });
         }
 
       } else if (bankType === 'BBVA') {
-        // BBVA: Columnas = [F.Valor(0), Fecha(1), Concepto(2), Movimiento(3), Importe(4), Divisa(5), Observaciones(6)]
-        // Nota: NO hay columna vacía al inicio en este formato
+        // BBVA: Columnas = [vacía(0), F.Valor(1), Fecha(2), Concepto(3), Movimiento(4), Importe(5), Divisa(6), Observaciones(7)]
         for (let i = headerRowIndex + 1; i < jsonData.length; i++) {
           const row = jsonData[i];
           
-          // F.Valor está en columna 0, Fecha en columna 1
-          const fValorCell = row[0];
-          const fechaCell = row[1];
+          // F.Valor está en columna 1, Fecha en columna 2
+          const fValorCell = row[1];
+          const fechaCell = row[2];
           const dateCell = fValorCell || fechaCell;
           
-          // Concepto en columna 2, Movimiento en columna 3, Importe en columna 4
-          const conceptoCell = String(row[2] || '').trim();
-          const movimientoCell = String(row[3] || '').trim();
-          let importeCell = row[4];
+          // Concepto en columna 3, Movimiento en columna 4, Importe en columna 5
+          const conceptoCell = String(row[3] || '').trim();
+          const movimientoCell = String(row[4] || '').trim();
+          let importeCell = row[5];
           
           if (!dateCell || !conceptoCell) continue;
           
@@ -566,13 +546,14 @@ const ExpenseTrackerApp = () => {
             continue;
           }
           
-          // Saltar transferencias enviadas (pero permitir "Transferencia realizada")
+          // Saltar transferencias a uno mismo (entre cuentas propias)
           if (conceptoCell.toLowerCase().includes('transferencia') && 
-              conceptoCell.toLowerCase().includes('enviada')) {
+              (movimientoCell.toLowerCase().includes('para constanza') || 
+               movimientoCell.toLowerCase().includes('para nicolas'))) {
             continue;
           }
 
-          // Extraer monto de columna Importe (4)
+          // Extraer monto de columna Importe (5)
           let amount = 0;
           if (importeCell !== undefined && importeCell !== null && importeCell !== '') {
             // Si XLSX ya lo parseó como número, usarlo directamente
@@ -581,7 +562,6 @@ const ExpenseTrackerApp = () => {
             } else {
               // Si es string, manejar formato español: -33,36 o 1.234,56
               let amountStr = String(importeCell).replace(/\s/g, '');
-              // Solo quitar puntos si hay coma (formato español con miles)
               if (amountStr.includes(',')) {
                 amountStr = amountStr.replace(/\./g, '').replace(',', '.');
               }
@@ -592,7 +572,6 @@ const ExpenseTrackerApp = () => {
           if (isNaN(amount)) continue;
           
           // En BBVA los gastos vienen como negativos (-33,36)
-          // Solo procesar si es negativo (gasto)
           if (amount >= 0) continue;
           
           amount = Math.abs(amount);
@@ -621,7 +600,7 @@ const ExpenseTrackerApp = () => {
             concept,
             amount,
             category: categorizeExpense(concept),
-            person: detectPerson(concept, titular),
+            person: currentPerson,
           });
         }
       }
@@ -711,7 +690,7 @@ const ExpenseTrackerApp = () => {
       concept: '',
       amount: '',
       category: 'Otro',
-      person: 'Nicolás',
+      person: getPersonFromUser(),
     });
     setShowManualExpenseModal(true);
   };
