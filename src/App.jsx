@@ -33,10 +33,10 @@ const DEFAULT_CATEGORIES = {
   'Uber/taxi': ['uber', 'taxi', 'cabify', 'bolt', 'yego'],
   Supermercado: [
     'mercadona', 'carrefour', 'lidl', 'aldi', 'dia', 'caprabo', 'bonpreu', 
-    'condis', 'supermercat', 'kachafruit', 'greensland', 'cash and carry','sempre obert'
+    'condis', 'supermercat', 'kachafruit', 'greensland', 'cash and carry',
   ],
   Suplementos: ['suplemento', 'proteina', 'vitamina', 'myprotein'],
-  Salidas: ['restauran', 'bar ', 'popis', 'fornet', 'canigo', 'bonastre', 'bravas', 'foix', 'pedreta', 'pren algo', 'lucciano'],
+  Salidas: ['restaurante', 'bar ', 'popis', 'fornet', 'canigo', 'bonastre', 'bravas', 'foix', 'pedreta', 'pren algo'],
   Ropa: ['zara', 'h&m', 'mango', 'pull&bear', 'bershka', 'stradivarius', 'oysho', 'massimo dutti', 'uniqlo'],
   Limpieza: ['limpieza', 'detergente', 'lejia'],
   'Peluquería/Barbería': ['peluqueria', 'barberia', 'salon', 'corte pelo'],
@@ -67,7 +67,8 @@ const COLORS = ['#8b5cf6', '#ec4899', '#06b6d4', '#10b981', '#f59e0b', '#ef4444'
 // =====================================================
 const ALLOWED_EMAILS = [
   'nicogaveglio@gmail.com',
-  'constanzabetelu@gmail.com',
+  // Agregá el email de Connie acá:
+  // 'connie@ejemplo.com',
 ];
 
 // =====================================================
@@ -409,10 +410,20 @@ const ExpenseTrackerApp = () => {
     return 'Otro';
   }, [categories]);
 
-  const detectPerson = (concept, titular) => {
+  const detectPerson = useCallback((concept, titular) => {
+    // Si el concepto menciona específicamente a alguien, usar ese nombre
     if (concept.toLowerCase().includes('connie')) return 'Connie';
-    return titular || 'Nicolás';
-  };
+    if (concept.toLowerCase().includes('nicolás') || concept.toLowerCase().includes('nicolas')) return 'Nicolás';
+    
+    // Si hay titular del extracto, usarlo
+    if (titular) return titular;
+    
+    // Por defecto, usar el nombre del usuario logueado
+    if (user?.email?.toLowerCase().includes('constanzabetelu')) return 'Connie';
+    if (user?.email?.toLowerCase().includes('nicogaveglio')) return 'Nicolás';
+    
+    return 'Nicolás'; // Fallback
+  }, [user]);
 
   // =====================================================
   // MANEJO DE ARCHIVOS EXCEL - SANTANDER Y BBVA
