@@ -910,7 +910,7 @@ const ExpenseTrackerApp = () => {
               <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b-2 border-purple-100">
-                    <th className="p-3 text-left font-semibold text-gray-700 sticky left-0 bg-white min-w-[200px]">Descripción</th>
+                    <th className="p-3 text-left font-semibold text-gray-700 sticky left-0 bg-gradient-to-r from-white via-white to-gray-50 min-w-[200px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Descripción</th>
                     <th className="p-3 text-left font-semibold text-gray-700 min-w-[100px]">Método</th>
                     <th className="p-3 text-right font-semibold text-gray-700 min-w-[80px]">Total</th>
                     {months.map(month => (
@@ -922,7 +922,7 @@ const ExpenseTrackerApp = () => {
                 <tbody>
                   {filtered.map((inst) => (
                     <tr key={inst.id} className="border-b border-gray-100 hover:bg-purple-50">
-                      <td className="p-3 sticky left-0 bg-white">
+                      <td className="p-3 sticky left-0 bg-gradient-to-r from-white via-white to-gray-50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
                         <div className="font-medium text-gray-800">{inst.description}</div>
                         <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium mt-1 ${inst.person === 'Nicolás' ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'}`}>{inst.person}</span>
                       </td>
@@ -945,7 +945,7 @@ const ExpenseTrackerApp = () => {
                     </tr>
                   ))}
                   <tr className="border-t-2 border-purple-200 bg-purple-50 font-bold">
-                    <td className="p-3 sticky left-0 bg-purple-50 text-purple-700">TOTAL</td>
+                    <td className="p-3 sticky left-0 bg-gradient-to-r from-purple-50 via-purple-50 to-purple-100 text-purple-700 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">TOTAL</td>
                     <td className="p-3"></td>
                     <td className="p-3 text-right text-purple-700">€{filtered.reduce((sum, inst) => sum + Number(inst.total_amount), 0).toFixed(2)}</td>
                     {monthlyTotals.map(month => (
