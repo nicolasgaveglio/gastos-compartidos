@@ -903,31 +903,31 @@ const ExpenseTrackerApp = () => {
             </select>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100 overflow-x-auto">
+          <div className="bg-white rounded-2xl shadow-lg border border-purple-100 overflow-x-auto">
             {filtered.length === 0 ? (
-              <div className="text-center py-12"><CreditCard className="mx-auto text-gray-300 mb-4 w-16 h-16" /><p className="text-gray-500 text-lg">No hay cuotas registradas.</p></div>
+              <div className="text-center py-12 px-6"><CreditCard className="mx-auto text-gray-300 mb-4 w-16 h-16" /><p className="text-gray-500 text-lg">No hay cuotas registradas.</p></div>
             ) : (
-              <table className="min-w-full text-sm">
+                <table className="min-w-full text-sm">
                 <thead>
                   <tr className="border-b-2 border-purple-100">
-                    <th className="p-3 text-left font-semibold text-gray-700 sticky left-0 bg-gradient-to-r from-white via-white to-gray-50 min-w-[200px] shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">Descripción</th>
-                    <th className="p-3 text-left font-semibold text-gray-700 min-w-[100px]">Método</th>
-                    <th className="p-3 text-right font-semibold text-gray-700 min-w-[80px]">Total</th>
+                    <th className="p-3 pl-4 text-left font-semibold text-gray-700 sticky left-0 bg-gray-100 min-w-[140px] z-10">Descripción</th>
+                    <th className="p-3 text-left font-semibold text-gray-700 sticky left-[140px] bg-gray-100 min-w-[90px] z-10">Método</th>
+                    <th className="p-3 pr-4 text-right font-semibold text-gray-700 sticky left-[230px] bg-gray-100 min-w-[90px] z-10 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.15)]">Total</th>
                     {months.map(month => (
                       <th key={month.key} className={`p-3 text-center font-semibold min-w-[90px] ${month.key === currentMonthKey ? 'bg-purple-100 text-purple-700' : 'text-gray-700'}`}>{month.label}</th>
                     ))}
-                    <th className="p-3 text-center font-semibold text-gray-700 min-w-[80px]">Acción</th>
+                    <th className="p-3 pr-4 text-center font-semibold text-gray-700 min-w-[80px]">Acción</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((inst) => (
                     <tr key={inst.id} className="border-b border-gray-100 hover:bg-purple-50">
-                      <td className="p-3 sticky left-0 bg-gradient-to-r from-white via-white to-gray-50 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">
+                      <td className="p-3 pl-4 sticky left-0 bg-gray-50 z-10">
                         <div className="font-medium text-gray-800">{inst.description}</div>
                         <span className={`inline-block px-2 py-0.5 text-xs rounded-full font-medium mt-1 ${inst.person === 'Nicolás' ? 'bg-pink-100 text-pink-700' : 'bg-blue-100 text-blue-700'}`}>{inst.person}</span>
                       </td>
-                      <td className="p-3 text-gray-600">{inst.payment_method || '-'}</td>
-                      <td className="p-3 text-right font-semibold text-gray-800">€{Number(inst.total_amount).toFixed(2)}</td>
+                      <td className="p-3 text-gray-600 sticky left-[140px] bg-gray-50 z-10">{inst.payment_method || '-'}</td>
+                      <td className="p-3 pr-4 text-right font-semibold text-gray-800 sticky left-[230px] bg-gray-50 z-10 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.15)]">€{Number(inst.total_amount).toFixed(2)}</td>
                       {months.map(month => {
                         const info = getInstallmentForMonth(inst, month.key);
                         return (
@@ -945,9 +945,9 @@ const ExpenseTrackerApp = () => {
                     </tr>
                   ))}
                   <tr className="border-t-2 border-purple-200 bg-purple-50 font-bold">
-                    <td className="p-3 sticky left-0 bg-gradient-to-r from-purple-50 via-purple-50 to-purple-100 text-purple-700 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)]">TOTAL</td>
-                    <td className="p-3"></td>
-                    <td className="p-3 text-right text-purple-700">€{filtered.reduce((sum, inst) => sum + Number(inst.total_amount), 0).toFixed(2)}</td>
+                    <td className="p-3 pl-4 sticky left-0 bg-purple-100 text-purple-700 z-10">TOTAL</td>
+                    <td className="p-3 sticky left-[140px] bg-purple-100 z-10"></td>
+                    <td className="p-3 pr-4 text-right text-purple-700 sticky left-[230px] bg-purple-100 z-10 shadow-[4px_0_8px_-2px_rgba(0,0,0,0.15)]">€{filtered.reduce((sum, inst) => sum + Number(inst.total_amount), 0).toFixed(2)}</td>
                     {monthlyTotals.map(month => (
                       <td key={month.key} className={`p-3 text-center text-purple-700 ${month.key === currentMonthKey ? 'bg-purple-100' : ''}`}>{month.total > 0 ? `€${month.total.toFixed(2)}` : '-'}</td>
                     ))}
