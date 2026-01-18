@@ -13,8 +13,10 @@ import {
   Line,
   PieChart,
   Pie,
+  Legend,
+  ComposedChart,
 } from 'recharts';
-import { Upload, DollarSign, User, Filter, Edit2, Plus, Save, X, Trash2, ListChecks, LogOut, CreditCard, Calendar, ArrowLeft } from 'lucide-react';
+import { Upload, DollarSign, User, Filter, Edit2, Plus, Save, X, Trash2, ListChecks, LogOut, CreditCard, Calendar, ArrowLeft, Wallet, TrendingUp, PiggyBank, Building, Target, Copy, AlertTriangle, TrendingDown, Percent } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 // =====================================================
@@ -61,7 +63,10 @@ const DEFAULT_CATEGORIES = {
   Otro: [],
 };
 
-const PAYMENT_METHODS = ['Klarna', 'Scalapay', 'Aplázame', 'Caixa', 'Paypal', 'Otro'];
+const DEFAULT_PAYMENT_METHODS = ['Klarna', 'Scalapay', 'Aplázame', 'Caixa', 'Paypal', 'Revolut', 'Bizum'];
+const ACCOUNT_TYPES = ['cuenta', 'inversion', 'prestamo'];
+const CURRENCIES = ['EUR', 'USD', 'AUD'];
+const INCOME_TYPES = ['salario', 'rendimiento', 'devolucion', 'otro'];
 const COLORS = ['#8b5cf6', '#ec4899', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#14b8a6', '#f97316'];
 const ALLOWED_EMAILS = ['nicogaveglio@gmail.com', 'constanzabetelu@gmail.com'];
 
@@ -105,6 +110,61 @@ const ExpenseTrackerApp = () => {
     start_month: new Date().toISOString().slice(0, 7),
     person: 'Nicolás',
   });
+
+  // Estados para Presupuesto
+  const [accounts, setAccounts] = useState([]);
+  const [accountBalances, setAccountBalances] = useState([]);
+  const [incomes, setIncomes] = useState([]);
+  const [budgetAdjustments, setBudgetAdjustments] = useState([]);
+  const [exchangeRates, setExchangeRates] = useState({ USD: 0.92, AUD: 0.60 }); // Tasas por defecto
+  const [showAccountModal, setShowAccountModal] = useState(false);
+  const [editingAccount, setEditingAccount] = useState(null);
+  const [accountForm, setAccountForm] = useState({
+    name: '',
+    currency: 'EUR',
+    type: 'cuenta',
+    person: 'Compartido',
+    notes: '',
+  });
+  const [showBalanceModal, setShowBalanceModal] = useState(false);
+  const [balanceForm, setBalanceForm] = useState({
+    account_id: '',
+    month: new Date().toISOString().slice(0, 7),
+    balance: '',
+  });
+  const [showIncomeModal, setShowIncomeModal] = useState(false);
+  const [editingIncome, setEditingIncome] = useState(null);
+  const [incomeForm, setIncomeForm] = useState({
+    month: new Date().toISOString().slice(0, 7),
+    type: 'salario',
+    description: '',
+    amount: '',
+    person: 'Nicolás',
+  });
+  const [budgetViewMonth, setBudgetViewMonth] = useState(new Date().toISOString().slice(0, 7));
+
+  // Estados para página de Presupuesto (proyección)
+  const [budgetCategories, setBudgetCategories] = useState([]);
+  const [budgetMonthly, setBudgetMonthly] = useState([]);
+  const [savingsGoals, setSavingsGoals] = useState([]);
+  const [showBudgetCategoryModal, setShowBudgetCategoryModal] = useState(false);
+  const [editingBudgetCategory, setEditingBudgetCategory] = useState(null);
+  const [budgetCategoryForm, setBudgetCategoryForm] = useState({
+    name: '',
+    monthly_amount: '',
+  });
+  const [showSavingsGoalModal, setShowSavingsGoalModal] = useState(false);
+  const [savingsGoalForm, setSavingsGoalForm] = useState({
+    name: '',
+    target_amount: '',
+  });
+  const [budgetCategoryFilter, setBudgetCategoryFilter] = useState('all');
+
+  // Estados para métodos de pago personalizados
+  const [paymentMethods, setPaymentMethods] = useState(DEFAULT_PAYMENT_METHODS);
+  const [showPaymentMethodModal, setShowPaymentMethodModal] = useState(false);
+  const [newPaymentMethod, setNewPaymentMethod] = useState('');
+  const [selectedBudgetMonth, setSelectedBudgetMonth] = useState(new Date().toISOString().slice(0, 7));
 
   // =====================================================
   // AUTENTICACIÓN
@@ -213,6 +273,74 @@ const ExpenseTrackerApp = () => {
           .single();
         if (categoriesData?.categories) {
           setCategories({ ...DEFAULT_CATEGORIES, ...categoriesData.categories });
+        }
+
+        // Cargar datos de presupuesto
+        const { data: accountsData } = await supabase
+          .from('accounts')
+          .select('*')
+          .eq('group_id', groupId)
+          .eq('is_active', true)
+          .order('name');
+        setAccounts(accountsData || []);
+
+        const { data: balancesData } = await supabase
+          .from('account_balances')
+          .select('*')
+          .eq('group_id', groupId)
+          .order('month', { ascending: false });
+        setAccountBalances(balancesData || []);
+
+        const { data: incomesData } = await supabase
+          .from('incomes')
+          .select('*')
+          .eq('group_id', groupId)
+          .order('month', { ascending: false });
+        setIncomes(incomesData || []);
+
+        const { data: adjustmentsData } = await supabase
+          .from('budget_adjustments')
+          .select('*')
+          .eq('group_id', groupId)
+          .order('month', { ascending: false });
+        setBudgetAdjustments(adjustmentsData || []);
+
+        // Cargar categorías de presupuesto
+        const { data: budgetCategoriesData } = await supabase
+          .from('budget_categories')
+          .select('*')
+          .eq('group_id', groupId)
+          .eq('is_active', true)
+          .order('sort_order');
+        setBudgetCategories(budgetCategoriesData || []);
+
+        // Cargar montos mensuales de presupuesto
+        const { data: budgetMonthlyData } = await supabase
+          .from('budget_monthly')
+          .select('*')
+          .eq('group_id', groupId);
+        setBudgetMonthly(budgetMonthlyData || []);
+
+        // Cargar metas de ahorro
+        const { data: savingsGoalsData } = await supabase
+          .from('savings_goals')
+          .select('*')
+          .eq('group_id', groupId)
+          .eq('is_active', true);
+        setSavingsGoals(savingsGoalsData || []);
+
+        // Cargar tasas de cambio (API gratuita)
+        try {
+          const ratesResponse = await fetch('https://api.exchangerate-api.com/v4/latest/EUR');
+          const ratesData = await ratesResponse.json();
+          if (ratesData.rates) {
+            setExchangeRates({
+              USD: 1 / ratesData.rates.USD,
+              AUD: 1 / ratesData.rates.AUD,
+            });
+          }
+        } catch (e) {
+          console.log('Usando tasas de cambio por defecto');
         }
 
         setIsInitialized(true);
@@ -367,6 +495,267 @@ const ExpenseTrackerApp = () => {
     if (!user || groupId === null) return false;
     try {
       const { error } = await supabase.from('installments').delete().eq('id', id).eq('group_id', groupId);
+      if (error) { alert(`Error: ${error.message}`); return false; }
+      return true;
+    } catch { return false; }
+  };
+
+  // =====================================================
+  // FUNCIONES DE PERSISTENCIA - PRESUPUESTO
+  // =====================================================
+  
+  // CUENTAS
+  const saveAccountToDb = async (account) => {
+    if (!user || groupId === null) return null;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from('accounts')
+        .insert([{ group_id: groupId, ...account }])
+        .select()
+        .single();
+      if (error) { alert(`Error: ${error.message}`); return null; }
+      return data;
+    } finally { setSaving(false); }
+  };
+
+  const updateAccountInDb = async (id, updates) => {
+    if (!user || groupId === null) return null;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from('accounts')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('group_id', groupId)
+        .select()
+        .single();
+      if (error) { alert(`Error: ${error.message}`); return null; }
+      return data;
+    } finally { setSaving(false); }
+  };
+
+  const deleteAccountFromDb = async (id) => {
+    if (!user || groupId === null) return false;
+    try {
+      const { error } = await supabase.from('accounts').update({ is_active: false }).eq('id', id).eq('group_id', groupId);
+      if (error) { alert(`Error: ${error.message}`); return false; }
+      return true;
+    } catch { return false; }
+  };
+
+  // SALDOS
+  const saveBalanceToDb = async (balance) => {
+    if (!user || groupId === null) return null;
+    setSaving(true);
+    try {
+      // Calcular saldo en EUR
+      const account = accounts.find(a => a.id === balance.account_id);
+      let balanceEur = parseFloat(balance.balance);
+      let rate = 1;
+      if (account && account.currency !== 'EUR') {
+        rate = exchangeRates[account.currency] || 1;
+        balanceEur = parseFloat(balance.balance) * rate;
+      }
+
+      const balanceData = {
+        group_id: groupId,
+        account_id: balance.account_id,
+        month: balance.month + '-01',
+        balance: parseFloat(balance.balance),
+        balance_eur: balanceEur,
+        exchange_rate: rate,
+      };
+
+      // Upsert - actualizar si existe, insertar si no
+      const { data, error } = await supabase
+        .from('account_balances')
+        .upsert([balanceData], { onConflict: 'account_id,month' })
+        .select()
+        .single();
+      if (error) { alert(`Error: ${error.message}`); return null; }
+      return data;
+    } finally { setSaving(false); }
+  };
+
+  // INGRESOS
+  const saveIncomeToDb = async (income) => {
+    if (!user || groupId === null) return null;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from('incomes')
+        .insert([{
+          group_id: groupId,
+          month: income.month + '-01',
+          type: income.type,
+          description: income.description,
+          amount: parseFloat(income.amount),
+          person: income.person,
+        }])
+        .select()
+        .single();
+      if (error) { alert(`Error: ${error.message}`); return null; }
+      return data;
+    } finally { setSaving(false); }
+  };
+
+  const updateIncomeInDb = async (id, updates) => {
+    if (!user || groupId === null) return null;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from('incomes')
+        .update({
+          month: updates.month + '-01',
+          type: updates.type,
+          description: updates.description,
+          amount: parseFloat(updates.amount),
+          person: updates.person,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', id)
+        .eq('group_id', groupId)
+        .select()
+        .single();
+      if (error) { alert(`Error: ${error.message}`); return null; }
+      return data;
+    } finally { setSaving(false); }
+  };
+
+  const deleteIncomeFromDb = async (id) => {
+    if (!user || groupId === null) return false;
+    try {
+      const { error } = await supabase.from('incomes').delete().eq('id', id).eq('group_id', groupId);
+      if (error) { alert(`Error: ${error.message}`); return false; }
+      return true;
+    } catch { return false; }
+  };
+
+  // =====================================================
+  // FUNCIONES DE PERSISTENCIA - CATEGORÍAS DE PRESUPUESTO
+  // =====================================================
+  
+  const saveBudgetCategoryToDb = async (category) => {
+    if (!user || groupId === null) return null;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from('budget_categories')
+        .insert([{ 
+          group_id: groupId, 
+          name: category.name,
+          monthly_amount: parseFloat(category.monthly_amount) || 0,
+          sort_order: budgetCategories.length,
+        }])
+        .select()
+        .single();
+      if (error) { alert(`Error: ${error.message}`); return null; }
+      return data;
+    } finally { setSaving(false); }
+  };
+
+  const updateBudgetCategoryInDb = async (id, updates) => {
+    if (!user || groupId === null) return null;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from('budget_categories')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('group_id', groupId)
+        .select()
+        .single();
+      if (error) { alert(`Error: ${error.message}`); return null; }
+      return data;
+    } finally { setSaving(false); }
+  };
+
+  const deleteBudgetCategoryFromDb = async (id) => {
+    if (!user || groupId === null) return false;
+    try {
+      const { error } = await supabase.from('budget_categories').update({ is_active: false }).eq('id', id).eq('group_id', groupId);
+      if (error) { alert(`Error: ${error.message}`); return false; }
+      return true;
+    } catch { return false; }
+  };
+
+  const saveBudgetMonthlyToDb = async (categoryId, month, amount) => {
+    if (!user || groupId === null) return null;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from('budget_monthly')
+        .upsert([{
+          group_id: groupId,
+          category_id: categoryId,
+          month: month + '-01',
+          amount: parseFloat(amount) || 0,
+        }], { onConflict: 'category_id,month' })
+        .select()
+        .single();
+      if (error) { alert(`Error: ${error.message}`); return null; }
+      return data;
+    } finally { setSaving(false); }
+  };
+
+  const copyBudgetFromPreviousMonth = async (targetMonth) => {
+    if (!user || groupId === null) return;
+    setSaving(true);
+    try {
+      const targetDate = new Date(targetMonth + '-01');
+      const prevDate = new Date(targetDate.getFullYear(), targetDate.getMonth() - 1, 1);
+      const prevMonth = prevDate.toISOString().slice(0, 7) + '-01';
+      
+      const prevBudgets = budgetMonthly.filter(b => b.month === prevMonth);
+      
+      for (const budget of prevBudgets) {
+        await supabase
+          .from('budget_monthly')
+          .upsert([{
+            group_id: groupId,
+            category_id: budget.category_id,
+            month: targetMonth + '-01',
+            amount: budget.amount,
+          }], { onConflict: 'category_id,month' });
+      }
+      
+      // Recargar datos
+      const { data } = await supabase
+        .from('budget_monthly')
+        .select('*')
+        .eq('group_id', groupId);
+      setBudgetMonthly(data || []);
+      
+      alert('✅ Presupuesto copiado del mes anterior');
+    } catch (error) {
+      alert('Error al copiar presupuesto');
+    } finally { setSaving(false); }
+  };
+
+  // METAS DE AHORRO
+  const saveSavingsGoalToDb = async (goal) => {
+    if (!user || groupId === null) return null;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from('savings_goals')
+        .insert([{
+          group_id: groupId,
+          name: goal.name,
+          target_amount: parseFloat(goal.target_amount),
+        }])
+        .select()
+        .single();
+      if (error) { alert(`Error: ${error.message}`); return null; }
+      return data;
+    } finally { setSaving(false); }
+  };
+
+  const deleteSavingsGoalFromDb = async (id) => {
+    if (!user || groupId === null) return false;
+    try {
+      const { error } = await supabase.from('savings_goals').update({ is_active: false }).eq('id', id).eq('group_id', groupId);
       if (error) { alert(`Error: ${error.message}`); return false; }
       return true;
     } catch { return false; }
@@ -811,6 +1200,340 @@ const ExpenseTrackerApp = () => {
   };
 
   // =====================================================
+  // FUNCIONES DE PRESUPUESTO
+  // =====================================================
+  
+  // Abrir modal de cuenta
+  const openAccountModal = (account = null) => {
+    if (account) {
+      setEditingAccount(account);
+      setAccountForm({
+        name: account.name,
+        currency: account.currency,
+        type: account.type,
+        person: account.person || 'Compartido',
+        notes: account.notes || '',
+      });
+    } else {
+      setEditingAccount(null);
+      setAccountForm({ name: '', currency: 'EUR', type: 'cuenta', person: 'Compartido', notes: '' });
+    }
+    setShowAccountModal(true);
+  };
+
+  const saveAccount = async () => {
+    if (!accountForm.name.trim()) { alert('Ingresa un nombre'); return; }
+    if (editingAccount) {
+      const updated = await updateAccountInDb(editingAccount.id, accountForm);
+      if (updated) {
+        setAccounts(accounts.map(a => a.id === editingAccount.id ? updated : a));
+        setShowAccountModal(false);
+      }
+    } else {
+      const saved = await saveAccountToDb(accountForm);
+      if (saved) {
+        setAccounts([...accounts, saved].sort((a, b) => a.name.localeCompare(b.name)));
+        setShowAccountModal(false);
+      }
+    }
+  };
+
+  const deleteAccount = async (id) => {
+    if (!window.confirm('¿Desactivar esta cuenta?')) return;
+    if (await deleteAccountFromDb(id)) {
+      setAccounts(accounts.filter(a => a.id !== id));
+    }
+  };
+
+  // Abrir modal de saldo
+  const openBalanceModal = (accountId = '', month = '') => {
+    setBalanceForm({
+      account_id: accountId || (accounts[0]?.id || ''),
+      month: month || new Date().toISOString().slice(0, 7),
+      balance: '',
+    });
+    setShowBalanceModal(true);
+  };
+
+  const saveBalance = async () => {
+    if (!balanceForm.account_id) { alert('Selecciona una cuenta'); return; }
+    if (!balanceForm.balance) { alert('Ingresa un saldo'); return; }
+    const saved = await saveBalanceToDb(balanceForm);
+    if (saved) {
+      setAccountBalances(prev => {
+        const filtered = prev.filter(b => !(b.account_id === saved.account_id && b.month === saved.month));
+        return [...filtered, saved].sort((a, b) => b.month.localeCompare(a.month));
+      });
+      setShowBalanceModal(false);
+    }
+  };
+
+  // Abrir modal de ingreso
+  const openIncomeModal = (income = null) => {
+    if (income) {
+      setEditingIncome(income);
+      setIncomeForm({
+        month: income.month.slice(0, 7),
+        type: income.type,
+        description: income.description,
+        amount: String(income.amount),
+        person: income.person || 'Compartido',
+      });
+    } else {
+      setEditingIncome(null);
+      setIncomeForm({
+        month: new Date().toISOString().slice(0, 7),
+        type: 'salario',
+        description: '',
+        amount: '',
+        person: getPersonFromUser(),
+      });
+    }
+    setShowIncomeModal(true);
+  };
+
+  const saveIncome = async () => {
+    if (!incomeForm.description.trim()) { alert('Ingresa una descripción'); return; }
+    if (!incomeForm.amount || parseFloat(incomeForm.amount) <= 0) { alert('Ingresa un monto válido'); return; }
+    if (editingIncome) {
+      const updated = await updateIncomeInDb(editingIncome.id, incomeForm);
+      if (updated) {
+        setIncomes(incomes.map(i => i.id === editingIncome.id ? updated : i));
+        setShowIncomeModal(false);
+      }
+    } else {
+      const saved = await saveIncomeToDb(incomeForm);
+      if (saved) {
+        setIncomes([saved, ...incomes]);
+        setShowIncomeModal(false);
+      }
+    }
+  };
+
+  const deleteIncome = async (id) => {
+    if (!window.confirm('¿Eliminar este ingreso?')) return;
+    if (await deleteIncomeFromDb(id)) {
+      setIncomes(incomes.filter(i => i.id !== id));
+    }
+  };
+
+  // Calcular saldo total de un mes en EUR
+  const getTotalBalanceForMonth = (monthKey) => {
+    const monthStr = monthKey + '-01';
+    let total = 0;
+    accounts.forEach(account => {
+      const balance = accountBalances.find(b => b.account_id === account.id && b.month === monthStr);
+      if (balance) {
+        total += balance.balance_eur || 0;
+      }
+    });
+    return total;
+  };
+
+  // Calcular ingresos totales de un mes
+  const getTotalIncomesForMonth = (monthKey) => {
+    const monthStr = monthKey + '-01';
+    return incomes
+      .filter(i => i.month === monthStr)
+      .reduce((sum, i) => sum + Number(i.amount), 0);
+  };
+
+  // Calcular gastos totales de un mes (desde la página de gastos)
+  const getTotalExpensesForMonth = (monthKey) => {
+    return expenses
+      .filter(exp => {
+        const parts = exp.date.split('/');
+        if (parts.length === 3) {
+          const expMonth = `${parts[2]}-${parts[1].padStart(2, '0')}`;
+          return expMonth === monthKey;
+        }
+        return false;
+      })
+      .reduce((sum, exp) => sum + Number(exp.amount), 0);
+  };
+
+  // Calcular cuotas de un mes (solo para proyección, no para saldo)
+  const getTotalInstallmentsForMonth = (monthKey) => {
+    let total = 0;
+    installments.forEach(inst => {
+      const startDate = new Date(inst.start_month);
+      const checkDate = new Date(monthKey + '-01');
+      const monthsDiff = (checkDate.getFullYear() - startDate.getFullYear()) * 12 + (checkDate.getMonth() - startDate.getMonth());
+      if (monthsDiff >= 0 && monthsDiff < inst.total_installments) {
+        total += inst.installment_amount;
+      }
+    });
+    return total;
+  };
+
+  // Generar meses para el saldo (3 atrás + 12 adelante)
+  const getBudgetMonths = () => {
+    const today = new Date();
+    const months = [];
+    for (let i = -3; i <= 12; i++) {
+      const date = new Date(today.getFullYear(), today.getMonth() + i, 1);
+      months.push({
+        key: date.toISOString().slice(0, 7),
+        label: date.toLocaleDateString('es-ES', { month: 'short', year: 'numeric' }),
+        isPast: i < 0,
+        isCurrent: i === 0,
+        isFuture: i > 0,
+      });
+    }
+    return months;
+  };
+
+  // Calcular datos del SALDO para un mes (sin cuotas - ya están en gastos)
+  const getSaldoDataForMonth = (monthKey, prevMonthBalance = 0) => {
+    const currentMonthKey = new Date().toISOString().slice(0, 7);
+    const isFutureMonth = monthKey > currentMonthKey;
+    
+    const saldoInicial = prevMonthBalance || getTotalBalanceForMonth(monthKey);
+    // Solo mostrar ingresos y gastos reales, no proyectados para meses futuros
+    const ingresos = getTotalIncomesForMonth(monthKey);
+    const gastos = isFutureMonth ? 0 : getTotalExpensesForMonth(monthKey);
+    const saldo = saldoInicial + ingresos - gastos;
+
+    return {
+      saldoInicial,
+      ingresos,
+      gastos,
+      saldo,
+    };
+  };
+
+  // Obtener presupuesto de una categoría para un mes (solo si está cargado explícitamente)
+  const getBudgetAmountForCategory = (categoryId, monthKey) => {
+    const monthStr = monthKey + '-01';
+    const budget = budgetMonthly.find(b => b.category_id === categoryId && b.month === monthStr);
+    if (budget) return budget.amount;
+    // NO usar monto por defecto - solo mostrar si está cargado
+    return 0;
+  };
+
+  // Obtener total presupuestado para un mes
+  const getTotalBudgetForMonth = (monthKey) => {
+    return budgetCategories.reduce((sum, cat) => sum + getBudgetAmountForCategory(cat.id, monthKey), 0);
+  };
+
+  // Calcular gasto real por categoría para un mes
+  const getRealExpenseByCategory = (categoryName, monthKey) => {
+    return expenses
+      .filter(exp => {
+        const parts = exp.date.split('/');
+        if (parts.length === 3) {
+          const expMonth = `${parts[2]}-${parts[1].padStart(2, '0')}`;
+          return expMonth === monthKey && exp.category === categoryName;
+        }
+        return false;
+      })
+      .reduce((sum, exp) => sum + Number(exp.amount), 0);
+  };
+
+  // Calcular ahorro del mes (presupuestado - gastado)
+  const getSavingsForMonth = (monthKey) => {
+    const presupuestado = getTotalBudgetForMonth(monthKey);
+    const gastado = getTotalExpensesForMonth(monthKey);
+    return presupuestado - gastado;
+  };
+
+  // Calcular tasa de ahorro
+  const getSavingsRate = (monthKey) => {
+    const ingresos = getTotalIncomesForMonth(monthKey);
+    const gastos = getTotalExpensesForMonth(monthKey);
+    if (ingresos === 0) return 0;
+    return ((ingresos - gastos) / ingresos) * 100;
+  };
+
+  // Calcular variación vs mes anterior
+  const getMonthVariation = (monthKey) => {
+    const currentDate = new Date(monthKey + '-01');
+    const prevDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1);
+    const prevMonthKey = prevDate.toISOString().slice(0, 7);
+    
+    const currentBalance = getTotalBalanceForMonth(monthKey);
+    const prevBalance = getTotalBalanceForMonth(prevMonthKey);
+    
+    return currentBalance - prevBalance;
+  };
+
+  // Datos para gráfico de patrimonio histórico
+  const getPatrimonioHistorico = () => {
+    const months = getBudgetMonths().filter(m => m.isPast || m.isCurrent);
+    return months.map(month => ({
+      month: month.label,
+      patrimonio: getTotalBalanceForMonth(month.key),
+    }));
+  };
+
+  // Datos para gráfico de distribución del patrimonio
+  const getDistribucionPatrimonio = () => {
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    return accounts.map(account => {
+      const balance = accountBalances.find(b => b.account_id === account.id);
+      return {
+        name: account.name,
+        value: balance?.balance_eur || 0,
+      };
+    }).filter(a => a.value > 0);
+  };
+
+  // Datos para gráfico de ingresos vs gastos
+  const getIngresosVsGastos = () => {
+    const months = getBudgetMonths().filter(m => m.isPast || m.isCurrent);
+    return months.map(month => ({
+      month: month.label,
+      ingresos: getTotalIncomesForMonth(month.key),
+      gastos: getTotalExpensesForMonth(month.key),
+    }));
+  };
+
+  // Proyección a fin de año
+  const getProyeccionFinDeAno = () => {
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const currentBalance = getTotalBalanceForMonth(currentMonth);
+    
+    // Calcular promedio de ahorro mensual de los últimos 3 meses
+    const months = getBudgetMonths().filter(m => m.isPast);
+    let totalAhorro = 0;
+    months.forEach(month => {
+      const ingresos = getTotalIncomesForMonth(month.key);
+      const gastos = getTotalExpensesForMonth(month.key);
+      totalAhorro += (ingresos - gastos);
+    });
+    const promedioAhorro = months.length > 0 ? totalAhorro / months.length : 0;
+    
+    // Meses restantes hasta fin de año
+    const currentDate = new Date();
+    const mesesRestantes = 12 - currentDate.getMonth();
+    
+    return currentBalance + (promedioAhorro * mesesRestantes);
+  };
+
+  // Datos para comparación presupuesto vs real por categoría
+  const getPresupuestoVsReal = (monthKey) => {
+    return budgetCategories.map(cat => {
+      const presupuestado = getBudgetAmountForCategory(cat.id, monthKey);
+      const real = getRealExpenseByCategory(cat.name, monthKey);
+      return {
+        name: cat.name,
+        presupuestado,
+        real,
+        diferencia: presupuestado - real,
+        excedido: real > presupuestado,
+      };
+    });
+  };
+
+  // Porcentaje de cumplimiento del presupuesto
+  const getCumplimientoPresupuesto = (monthKey) => {
+    const presupuestado = getTotalBudgetForMonth(monthKey);
+    const gastado = getTotalExpensesForMonth(monthKey);
+    if (presupuestado === 0) return 100;
+    return Math.min(100, (gastado / presupuestado) * 100);
+  };
+
+  // =====================================================
   // RENDER: LOADING
   // =====================================================
   if (loading) {
@@ -832,7 +1555,7 @@ const ExpenseTrackerApp = () => {
       <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 px-4">
         <div className="bg-white rounded-3xl shadow-xl p-8 max-w-md w-full border border-purple-100">
           <h1 className="text-3xl md:text-4xl font-bold text-center bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent mb-2">
-            Gastos Compartidos 💑
+            Finanzas Familiares 💑
           </h1>
           <p className="text-gray-600 mb-8 text-center">Inicia sesión para gestionar tus gastos</p>
           <button onClick={handleLogin} className="w-full flex items-center justify-center gap-2 px-8 py-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:shadow-lg transition-all font-semibold text-lg">
@@ -865,9 +1588,17 @@ const ExpenseTrackerApp = () => {
                   <p className="text-gray-600 mt-1">Gestión de pagos en cuotas</p>
                 </div>
               </div>
-              <button onClick={handleLogout} className="flex items-center gap-2 px-6 py-3 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold">
-                <LogOut className="w-4 h-4" />Cerrar sesión
-              </button>
+              <div className="flex gap-3">
+                <button onClick={() => setCurrentPage('saldo')} className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium">
+                  <Wallet className="w-4 h-4" />Saldo
+                </button>
+                <button onClick={() => setCurrentPage('presupuesto')} className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium">
+                  <Target className="w-4 h-4" />Presupuesto
+                </button>
+                <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold">
+                  <LogOut className="w-4 h-4" />Salir
+                </button>
+              </div>
             </div>
           </header>
 
@@ -967,7 +1698,13 @@ const ExpenseTrackerApp = () => {
                 </div>
                 <div className="space-y-4">
                   <div><label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label><input type="text" placeholder="Ej: Sklum sofá" value={installmentForm.description} onChange={(e) => setInstallmentForm({ ...installmentForm, description: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" /></div>
-                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Método de Pago</label><select value={installmentForm.payment_method} onChange={(e) => setInstallmentForm({ ...installmentForm, payment_method: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl">{PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-sm font-medium text-gray-700">Método de Pago</label>
+                      <button type="button" onClick={() => setShowPaymentMethodModal(true)} className="text-xs text-purple-600 hover:text-purple-800">+ Agregar método</button>
+                    </div>
+                    <select value={installmentForm.payment_method} onChange={(e) => setInstallmentForm({ ...installmentForm, payment_method: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl">{paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}</select>
+                  </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">Monto Total (€)</label><input type="number" step="0.01" placeholder="0.00" value={installmentForm.total_amount} onChange={(e) => setInstallmentForm({ ...installmentForm, total_amount: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" /></div>
                     <div><label className="block text-sm font-medium text-gray-700 mb-1">Cantidad de Cuotas</label><input type="number" placeholder="3" value={installmentForm.total_installments} onChange={(e) => setInstallmentForm({ ...installmentForm, total_installments: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" /></div>
@@ -981,6 +1718,726 @@ const ExpenseTrackerApp = () => {
                 <div className="flex gap-3 mt-6">
                   <button onClick={saveInstallment} disabled={saving} className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg disabled:opacity-50"><Save className="w-5 h-5" />{saving ? 'Guardando...' : 'Guardar'}</button>
                   <button onClick={() => setShowInstallmentModal(false)} className="px-6 py-3 rounded-xl font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300">Cancelar</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showPaymentMethodModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-xl text-gray-800">Gestionar Métodos de Pago</h3>
+                  <button onClick={() => setShowPaymentMethodModal(false)} className="text-gray-500 hover:text-gray-700"><X className="w-6 h-6" /></button>
+                </div>
+                <div className="space-y-4">
+                  <div className="flex gap-2">
+                    <input type="text" placeholder="Nuevo método de pago" value={newPaymentMethod} onChange={(e) => setNewPaymentMethod(e.target.value)} className="flex-1 px-4 py-3 border border-gray-300 rounded-xl" />
+                    <button onClick={() => { if (newPaymentMethod.trim() && !paymentMethods.includes(newPaymentMethod.trim())) { setPaymentMethods([...paymentMethods, newPaymentMethod.trim()]); setNewPaymentMethod(''); }}} className="px-4 py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700"><Plus className="w-5 h-5" /></button>
+                  </div>
+                  <div className="border border-gray-200 rounded-xl max-h-60 overflow-y-auto">
+                    {paymentMethods.map((method, index) => (
+                      <div key={method} className="flex items-center justify-between px-4 py-3 border-b border-gray-100 last:border-b-0">
+                        <span>{method}</span>
+                        {!DEFAULT_PAYMENT_METHODS.includes(method) && (
+                          <button onClick={() => setPaymentMethods(paymentMethods.filter(m => m !== method))} className="text-red-500 hover:text-red-700"><Trash2 className="w-4 h-4" /></button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex gap-3 mt-6">
+                  <button onClick={() => setShowPaymentMethodModal(false)} className="flex-1 px-6 py-3 rounded-xl font-semibold bg-purple-600 text-white hover:bg-purple-700">Listo</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // =====================================================
+  // RENDER: SALDO
+  // =====================================================
+  if (currentPage === 'saldo') {
+    const budgetMonths = getBudgetMonths();
+    const currentMonthKey = new Date().toISOString().slice(0, 7);
+
+    // Calcular datos de saldo para cada mes
+    let runningBalance = 0;
+    const saldoData = budgetMonths.map((month, index) => {
+      if (index === 0) {
+        runningBalance = getTotalBalanceForMonth(month.key);
+      }
+      const data = getSaldoDataForMonth(month.key, runningBalance);
+      runningBalance = data.saldo;
+      return { ...month, ...data };
+    });
+
+    const patrimonioActual = getTotalBalanceForMonth(currentMonthKey);
+    const ingresosEsteMes = getTotalIncomesForMonth(currentMonthKey);
+    const gastosEsteMes = getTotalExpensesForMonth(currentMonthKey);
+    const ahorroDelMes = getSavingsForMonth(currentMonthKey);
+    const tasaAhorro = getSavingsRate(currentMonthKey);
+    const variacionMes = getMonthVariation(currentMonthKey);
+    const proyeccionFinAno = getProyeccionFinDeAno();
+    const patrimonioHistorico = getPatrimonioHistorico();
+    const distribucionPatrimonio = getDistribucionPatrimonio();
+    const ingresosVsGastos = getIngresosVsGastos();
+    const metaActiva = savingsGoals[0];
+    const progresoMeta = metaActiva ? (patrimonioActual / metaActiva.target_amount) * 100 : 0;
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 text-gray-900">
+        <div className="max-w-full mx-auto px-4 py-6 md:py-10">
+          <header className="bg-white rounded-3xl shadow-xl p-6 md:p-8 mb-8 border border-purple-100">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <button onClick={() => setCurrentPage('expenses')} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft className="w-6 h-6 text-gray-600" /></button>
+                <div>
+                  <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Saldo 💰</h1>
+                  <p className="text-gray-600 mt-1">Control de patrimonio familiar</p>
+                </div>
+              </div>
+              <div className="flex gap-3 flex-wrap">
+                <button onClick={() => setCurrentPage('presupuesto')} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:shadow-lg font-semibold">
+                  <Target className="w-4 h-4" />Presupuesto
+                </button>
+                <button onClick={() => setCurrentPage('installments')} className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium">
+                  <CreditCard className="w-4 h-4" />Cuotas
+                </button>
+                <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold">
+                  <LogOut className="w-4 h-4" />Salir
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {/* Stats Cards - Fila 1 */}
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+            <div className="bg-white rounded-2xl shadow-lg p-5 border border-purple-100">
+              <div className="flex items-center justify-between">
+                <div><p className="text-gray-600 text-xs font-medium">Patrimonio Actual</p><p className="text-xl font-bold text-purple-600 mt-1">€{patrimonioActual.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
+                <div className="bg-purple-100 p-2 rounded-xl"><PiggyBank className="text-purple-600 w-6 h-6" /></div>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-lg p-5 border border-green-100">
+              <div className="flex items-center justify-between">
+                <div><p className="text-gray-600 text-xs font-medium">Ingresos Este Mes</p><p className="text-xl font-bold text-green-600 mt-1">€{ingresosEsteMes.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
+                <div className="bg-green-100 p-2 rounded-xl"><TrendingUp className="text-green-600 w-6 h-6" /></div>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-lg p-5 border border-red-100">
+              <div className="flex items-center justify-between">
+                <div><p className="text-gray-600 text-xs font-medium">Gastos Este Mes</p><p className="text-xl font-bold text-red-600 mt-1">€{gastosEsteMes.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
+                <div className="bg-red-100 p-2 rounded-xl"><TrendingDown className="text-red-600 w-6 h-6" /></div>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-lg p-5 border border-blue-100">
+              <div className="flex items-center justify-between">
+                <div><p className="text-gray-600 text-xs font-medium">Ahorro del Mes</p><p className={`text-xl font-bold mt-1 ${ahorroDelMes >= 0 ? 'text-blue-600' : 'text-red-600'}`}>{ahorroDelMes >= 0 ? '€' : '-€'}{Math.abs(ahorroDelMes).toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
+                <div className="bg-blue-100 p-2 rounded-xl"><DollarSign className="text-blue-600 w-6 h-6" /></div>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-lg p-5 border border-cyan-100">
+              <div className="flex items-center justify-between">
+                <div><p className="text-gray-600 text-xs font-medium">Tasa de Ahorro</p><p className={`text-xl font-bold mt-1 ${tasaAhorro >= 0 ? 'text-cyan-600' : 'text-red-600'}`}>{tasaAhorro.toFixed(1)}%</p></div>
+                <div className="bg-cyan-100 p-2 rounded-xl"><Percent className="text-cyan-600 w-6 h-6" /></div>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-lg p-5 border border-orange-100">
+              <div className="flex items-center justify-between">
+                <div><p className="text-gray-600 text-xs font-medium">Var. vs Mes Ant.</p><p className={`text-xl font-bold mt-1 ${variacionMes >= 0 ? 'text-green-600' : 'text-red-600'}`}>{variacionMes >= 0 ? '+' : ''}€{variacionMes.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
+                <div className={`p-2 rounded-xl ${variacionMes >= 0 ? 'bg-green-100' : 'bg-red-100'}`}>{variacionMes >= 0 ? <TrendingUp className="text-green-600 w-6 h-6" /> : <TrendingDown className="text-red-600 w-6 h-6" />}</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Meta de Ahorro */}
+          {metaActiva && (
+            <div className="bg-white rounded-2xl shadow-lg p-6 border border-yellow-100 mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <Target className="text-yellow-600 w-6 h-6" />
+                  <div>
+                    <h3 className="font-bold text-gray-800">{metaActiva.name}</h3>
+                    <p className="text-sm text-gray-500">Meta: €{Number(metaActiva.target_amount).toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <p className="text-2xl font-bold text-yellow-600">{Math.min(100, progresoMeta).toFixed(1)}%</p>
+                  <p className="text-xs text-gray-500">completado</p>
+                </div>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-4">
+                <div className="bg-gradient-to-r from-yellow-400 to-yellow-600 h-4 rounded-full transition-all" style={{ width: `${Math.min(100, progresoMeta)}%` }}></div>
+              </div>
+              <p className="text-sm text-gray-600 mt-2">Faltan €{Math.max(0, metaActiva.target_amount - patrimonioActual).toLocaleString('es-ES', { minimumFractionDigits: 2 })} para alcanzar tu meta</p>
+            </div>
+          )}
+
+          {/* Proyección fin de año */}
+          <div className="bg-gradient-to-r from-purple-600 to-pink-600 rounded-2xl shadow-lg p-6 mb-6 text-white">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-purple-100 text-sm font-medium">Proyección a Fin de Año</p>
+                <p className="text-3xl font-bold mt-1">€{proyeccionFinAno.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p>
+                <p className="text-purple-200 text-xs mt-1">Basado en tu promedio de ahorro mensual</p>
+              </div>
+              <TrendingUp className="w-12 h-12 text-purple-200" />
+            </div>
+          </div>
+
+          {/* Acciones */}
+          <div className="flex flex-wrap gap-3 mb-6">
+            <button onClick={() => openAccountModal()} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:shadow-lg font-semibold">
+              <Plus className="w-4 h-4" />Nueva Cuenta
+            </button>
+            <button onClick={() => openBalanceModal()} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg font-semibold">
+              <Wallet className="w-4 h-4" />Actualizar Saldo
+            </button>
+            <button onClick={() => openIncomeModal()} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg font-semibold">
+              <Plus className="w-4 h-4" />Agregar Ingreso
+            </button>
+            <button onClick={() => setShowSavingsGoalModal(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-yellow-500 to-orange-500 text-white hover:shadow-lg font-semibold">
+              <Target className="w-4 h-4" />Nueva Meta
+            </button>
+          </div>
+
+          {/* Gráficos */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            {/* Patrimonio Histórico */}
+            <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100">
+              <h3 className="font-bold mb-4 text-gray-800">Patrimonio Histórico</h3>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={patrimonioHistorico}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `€${(v/1000).toFixed(0)}k`} />
+                    <Tooltip formatter={(value) => [`€${value.toLocaleString('es-ES', { minimumFractionDigits: 2 })}`, 'Patrimonio']} />
+                    <Line type="monotone" dataKey="patrimonio" stroke="#8b5cf6" strokeWidth={3} dot={{ r: 4 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Distribución del Patrimonio */}
+            <div className="bg-white rounded-2xl shadow-lg p-6 border border-pink-100">
+              <h3 className="font-bold mb-4 text-gray-800">Distribución del Patrimonio</h3>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie dataKey="value" data={distribucionPatrimonio} cx="50%" cy="50%" outerRadius={70} label={({ name, value }) => `${name.substring(0, 10)}...`}>
+                      {distribucionPatrimonio.map((entry, index) => <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />)}
+                    </Pie>
+                    <Tooltip formatter={(value) => [`€${value.toLocaleString('es-ES', { minimumFractionDigits: 2 })}`, '']} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Ingresos vs Gastos */}
+            <div className="bg-white rounded-2xl shadow-lg p-6 border border-blue-100">
+              <h3 className="font-bold mb-4 text-gray-800">Ingresos vs Gastos</h3>
+              <div className="h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={ingresosVsGastos}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} />
+                    <Tooltip formatter={(value) => [`€${value.toLocaleString('es-ES', { minimumFractionDigits: 2 })}`, '']} />
+                    <Legend />
+                    <Bar dataKey="ingresos" fill="#10b981" name="Ingresos" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="gastos" fill="#ef4444" name="Gastos" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabla de Cuentas */}
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100 mb-8">
+            <h3 className="font-bold text-lg text-gray-800 mb-4 flex items-center gap-2"><Building className="w-5 h-5 text-purple-600" />Cuentas y Fondos</h3>
+            {accounts.length === 0 ? (
+              <p className="text-gray-500 text-center py-8">No hay cuentas registradas. Agrega una para comenzar.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b-2 border-purple-100">
+                      <th className="p-3 text-left font-semibold text-gray-700">Cuenta</th>
+                      <th className="p-3 text-left font-semibold text-gray-700">Tipo</th>
+                      <th className="p-3 text-left font-semibold text-gray-700">Moneda</th>
+                      <th className="p-3 text-left font-semibold text-gray-700">Persona</th>
+                      <th className="p-3 text-right font-semibold text-gray-700">Saldo Original</th>
+                      <th className="p-3 text-right font-semibold text-gray-700">Saldo EUR</th>
+                      <th className="p-3 text-center font-semibold text-gray-700">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {accounts.map(account => {
+                      const latestBalance = accountBalances.find(b => b.account_id === account.id);
+                      return (
+                        <tr key={account.id} className="border-b border-gray-100 hover:bg-purple-50">
+                          <td className="p-3 font-medium text-gray-800">{account.name}</td>
+                          <td className="p-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${account.type === 'cuenta' ? 'bg-blue-100 text-blue-700' : account.type === 'inversion' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>{account.type}</span></td>
+                          <td className="p-3 text-gray-600">{account.currency}</td>
+                          <td className="p-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${account.person === 'Nicolás' ? 'bg-pink-100 text-pink-700' : account.person === 'Connie' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>{account.person}</span></td>
+                          <td className="p-3 text-right font-semibold">{latestBalance ? `${account.currency === 'EUR' ? '€' : account.currency === 'USD' ? '$' : 'A$'}${Number(latestBalance.balance).toLocaleString('es-ES', { minimumFractionDigits: 2 })}` : '-'}</td>
+                          <td className="p-3 text-right font-semibold text-purple-600">{latestBalance ? `€${Number(latestBalance.balance_eur).toLocaleString('es-ES', { minimumFractionDigits: 2 })}` : '-'}</td>
+                          <td className="p-3 text-center">
+                            <div className="flex justify-center gap-1">
+                              <button onClick={() => openBalanceModal(account.id)} className="p-1.5 text-purple-600 hover:bg-purple-100 rounded"><Wallet className="w-4 h-4" /></button>
+                              <button onClick={() => openAccountModal(account)} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded"><Edit2 className="w-4 h-4" /></button>
+                              <button onClick={() => deleteAccount(account.id)} className="p-1.5 text-red-600 hover:bg-red-100 rounded"><Trash2 className="w-4 h-4" /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    <tr className="border-t-2 border-purple-200 bg-purple-50 font-bold">
+                      <td className="p-3 text-purple-700" colSpan="5">TOTAL PATRIMONIO</td>
+                      <td className="p-3 text-right text-purple-700">€{patrimonioActual.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</td>
+                      <td></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Tabla de Saldo Mensual */}
+          <div className="bg-white rounded-2xl shadow-lg border border-purple-100 overflow-x-auto mb-8">
+            <div className="p-6 border-b border-purple-100">
+              <h3 className="font-bold text-lg text-gray-800 flex items-center gap-2"><TrendingUp className="w-5 h-5 text-purple-600" />Saldo Mensual</h3>
+            </div>
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr className="border-b-2 border-purple-100">
+                  <th className="p-3 pl-6 text-left font-semibold text-gray-700 sticky left-0 bg-gray-100 min-w-[160px] z-10">Concepto</th>
+                  {saldoData.map(month => (
+                    <th key={month.key} className={`p-3 text-center font-semibold min-w-[100px] ${month.isCurrent ? 'bg-purple-100 text-purple-700' : month.isPast ? 'bg-gray-50 text-gray-500' : 'text-gray-700'}`}>{month.label}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-b border-gray-100">
+                  <td className="p-3 pl-6 font-medium text-gray-700 sticky left-0 bg-white">Saldo Inicial</td>
+                  {saldoData.map(month => (
+                    <td key={month.key} className={`p-3 text-center ${month.isCurrent ? 'bg-purple-50' : ''}`}>€{month.saldoInicial.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</td>
+                  ))}
+                </tr>
+                <tr className="border-b border-gray-100 bg-green-50">
+                  <td className="p-3 pl-6 font-medium text-green-700 sticky left-0 bg-green-50">Ingresos</td>
+                  {saldoData.map(month => (
+                    <td key={month.key} className={`p-3 text-center text-green-600 font-semibold ${month.isCurrent ? 'bg-green-100' : ''}`}>{month.ingresos > 0 ? `€${month.ingresos.toLocaleString('es-ES', { minimumFractionDigits: 2 })}` : '-'}</td>
+                  ))}
+                </tr>
+                <tr className="border-b border-gray-100 bg-red-50">
+                  <td className="p-3 pl-6 font-medium text-red-700 sticky left-0 bg-red-50">Gastos</td>
+                  {saldoData.map(month => (
+                    <td key={month.key} className={`p-3 text-center text-red-600 ${month.isCurrent ? 'bg-red-100' : ''}`}>{month.gastos > 0 ? `€${month.gastos.toLocaleString('es-ES', { minimumFractionDigits: 2 })}` : '-'}</td>
+                  ))}
+                </tr>
+                <tr className="border-t-2 border-purple-200 bg-purple-100">
+                  <td className="p-3 pl-6 font-bold text-purple-700 sticky left-0 bg-purple-100">Saldo</td>
+                  {saldoData.map(month => (
+                    <td key={month.key} className={`p-3 text-center font-bold ${month.saldo >= 0 ? 'text-purple-700' : 'text-red-600'} ${month.isCurrent ? 'bg-purple-200' : ''}`}>€{month.saldo.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Ingresos del mes */}
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100">
+            <h3 className="font-bold text-lg text-gray-800 mb-4 flex items-center gap-2"><TrendingUp className="w-5 h-5 text-green-600" />Ingresos Registrados</h3>
+            {incomes.length === 0 ? (
+              <p className="text-gray-500 text-center py-8">No hay ingresos registrados.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b-2 border-purple-100">
+                      <th className="p-3 text-left font-semibold text-gray-700">Mes</th>
+                      <th className="p-3 text-left font-semibold text-gray-700">Tipo</th>
+                      <th className="p-3 text-left font-semibold text-gray-700">Descripción</th>
+                      <th className="p-3 text-left font-semibold text-gray-700">Persona</th>
+                      <th className="p-3 text-right font-semibold text-gray-700">Monto</th>
+                      <th className="p-3 text-center font-semibold text-gray-700">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {incomes.slice(0, 20).map(income => (
+                      <tr key={income.id} className="border-b border-gray-100 hover:bg-green-50">
+                        <td className="p-3 text-gray-600">{new Date(income.month).toLocaleDateString('es-ES', { month: 'short', year: 'numeric' })}</td>
+                        <td className="p-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${income.type === 'salario' ? 'bg-blue-100 text-blue-700' : income.type === 'rendimiento' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>{income.type}</span></td>
+                        <td className="p-3 font-medium text-gray-800">{income.description}</td>
+                        <td className="p-3"><span className={`px-2 py-1 rounded-full text-xs font-medium ${income.person === 'Nicolás' ? 'bg-pink-100 text-pink-700' : income.person === 'Connie' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-700'}`}>{income.person}</span></td>
+                        <td className="p-3 text-right font-semibold text-green-600">€{Number(income.amount).toLocaleString('es-ES', { minimumFractionDigits: 2 })}</td>
+                        <td className="p-3 text-center">
+                          <div className="flex justify-center gap-1">
+                            <button onClick={() => openIncomeModal(income)} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded"><Edit2 className="w-4 h-4" /></button>
+                            <button onClick={() => deleteIncome(income.id)} className="p-1.5 text-red-600 hover:bg-red-100 rounded"><Trash2 className="w-4 h-4" /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Modales */}
+          {showAccountModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-xl text-gray-800">{editingAccount ? 'Editar Cuenta' : 'Nueva Cuenta'}</h3>
+                  <button onClick={() => setShowAccountModal(false)} className="text-gray-500 hover:text-gray-700"><X className="w-6 h-6" /></button>
+                </div>
+                <div className="space-y-4">
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label><input type="text" placeholder="Ej: Santander Nico" value={accountForm.name} onChange={(e) => setAccountForm({ ...accountForm, name: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" /></div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Moneda</label><select value={accountForm.currency} onChange={(e) => setAccountForm({ ...accountForm, currency: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl">{CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}</select></div>
+                    <div><label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label><select value={accountForm.type} onChange={(e) => setAccountForm({ ...accountForm, type: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl">{ACCOUNT_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+                  </div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Persona</label><select value={accountForm.person} onChange={(e) => setAccountForm({ ...accountForm, person: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl"><option value="Compartido">Compartido</option><option value="Nicolás">Nicolás</option><option value="Connie">Connie</option></select></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Notas</label><input type="text" placeholder="Opcional" value={accountForm.notes} onChange={(e) => setAccountForm({ ...accountForm, notes: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" /></div>
+                </div>
+                <div className="flex gap-3 mt-6">
+                  <button onClick={saveAccount} disabled={saving} className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg disabled:opacity-50"><Save className="w-5 h-5" />{saving ? 'Guardando...' : 'Guardar'}</button>
+                  <button onClick={() => setShowAccountModal(false)} className="px-6 py-3 rounded-xl font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300">Cancelar</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showBalanceModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-xl text-gray-800">Actualizar Saldo</h3>
+                  <button onClick={() => setShowBalanceModal(false)} className="text-gray-500 hover:text-gray-700"><X className="w-6 h-6" /></button>
+                </div>
+                <div className="space-y-4">
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Cuenta</label><select value={balanceForm.account_id} onChange={(e) => setBalanceForm({ ...balanceForm, account_id: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl">{accounts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.currency})</option>)}</select></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Mes</label><input type="month" value={balanceForm.month} onChange={(e) => setBalanceForm({ ...balanceForm, month: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Saldo</label><input type="number" step="0.01" placeholder="0.00" value={balanceForm.balance} onChange={(e) => setBalanceForm({ ...balanceForm, balance: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" /></div>
+                  {balanceForm.balance && balanceForm.account_id && (() => {
+                    const account = accounts.find(a => a.id === balanceForm.account_id);
+                    if (account && account.currency !== 'EUR') {
+                      const rate = exchangeRates[account.currency] || 1;
+                      const eurValue = parseFloat(balanceForm.balance) * rate;
+                      return <div className="bg-purple-50 p-3 rounded-xl"><p className="text-sm text-purple-700"><span className="font-semibold">En EUR: </span>€{eurValue.toLocaleString('es-ES', { minimumFractionDigits: 2 })} (tasa: {rate.toFixed(4)})</p></div>;
+                    }
+                    return null;
+                  })()}
+                </div>
+                <div className="flex gap-3 mt-6">
+                  <button onClick={saveBalance} disabled={saving} className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg disabled:opacity-50"><Save className="w-5 h-5" />{saving ? 'Guardando...' : 'Guardar'}</button>
+                  <button onClick={() => setShowBalanceModal(false)} className="px-6 py-3 rounded-xl font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300">Cancelar</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showIncomeModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-xl text-gray-800">{editingIncome ? 'Editar Ingreso' : 'Nuevo Ingreso'}</h3>
+                  <button onClick={() => setShowIncomeModal(false)} className="text-gray-500 hover:text-gray-700"><X className="w-6 h-6" /></button>
+                </div>
+                <div className="space-y-4">
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Mes</label><input type="month" value={incomeForm.month} onChange={(e) => setIncomeForm({ ...incomeForm, month: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Tipo</label><select value={incomeForm.type} onChange={(e) => setIncomeForm({ ...incomeForm, type: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl">{INCOME_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label><input type="text" placeholder="Ej: Salario Enero" value={incomeForm.description} onChange={(e) => setIncomeForm({ ...incomeForm, description: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Monto (€)</label><input type="number" step="0.01" placeholder="0.00" value={incomeForm.amount} onChange={(e) => setIncomeForm({ ...incomeForm, amount: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Persona</label><select value={incomeForm.person} onChange={(e) => setIncomeForm({ ...incomeForm, person: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl"><option value="Compartido">Compartido</option><option value="Nicolás">Nicolás</option><option value="Connie">Connie</option></select></div>
+                </div>
+                <div className="flex gap-3 mt-6">
+                  <button onClick={saveIncome} disabled={saving} className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg disabled:opacity-50"><Save className="w-5 h-5" />{saving ? 'Guardando...' : 'Guardar'}</button>
+                  <button onClick={() => setShowIncomeModal(false)} className="px-6 py-3 rounded-xl font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300">Cancelar</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {showSavingsGoalModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-xl text-gray-800">Nueva Meta de Ahorro</h3>
+                  <button onClick={() => setShowSavingsGoalModal(false)} className="text-gray-500 hover:text-gray-700"><X className="w-6 h-6" /></button>
+                </div>
+                <div className="space-y-4">
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Nombre de la Meta</label><input type="text" placeholder="Ej: Fondo de emergencia" value={savingsGoalForm.name} onChange={(e) => setSavingsGoalForm({ ...savingsGoalForm, name: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Monto Objetivo (€)</label><input type="number" step="0.01" placeholder="50000" value={savingsGoalForm.target_amount} onChange={(e) => setSavingsGoalForm({ ...savingsGoalForm, target_amount: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" /></div>
+                </div>
+                <div className="flex gap-3 mt-6">
+                  <button onClick={async () => {
+                    if (!savingsGoalForm.name || !savingsGoalForm.target_amount) { alert('Completa todos los campos'); return; }
+                    const saved = await saveSavingsGoalToDb(savingsGoalForm);
+                    if (saved) { setSavingsGoals([...savingsGoals, saved]); setShowSavingsGoalModal(false); setSavingsGoalForm({ name: '', target_amount: '' }); }
+                  }} disabled={saving} className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold bg-gradient-to-r from-yellow-500 to-orange-500 text-white hover:shadow-lg disabled:opacity-50"><Save className="w-5 h-5" />{saving ? 'Guardando...' : 'Guardar'}</button>
+                  <button onClick={() => setShowSavingsGoalModal(false)} className="px-6 py-3 rounded-xl font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300">Cancelar</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // =====================================================
+  // RENDER: PRESUPUESTO (Proyección)
+  // =====================================================
+  if (currentPage === 'presupuesto') {
+    const currentMonthKey = selectedBudgetMonth;
+    const presupuestoVsReal = getPresupuestoVsReal(currentMonthKey);
+    const cuotasDelMes = getTotalInstallmentsForMonth(currentMonthKey);
+    const cumplimiento = getCumplimientoPresupuesto(currentMonthKey);
+    const totalPresupuestado = getTotalBudgetForMonth(currentMonthKey);
+    const totalGastado = getTotalExpensesForMonth(currentMonthKey);
+    const totalConCuotas = totalGastado + cuotasDelMes;
+    const categoriasExcedidas = presupuestoVsReal.filter(c => c.excedido && c.presupuestado > 0);
+    
+    // Filtrar datos para gráfico
+    const dataParaGrafico = budgetCategoryFilter === 'all' 
+      ? presupuestoVsReal.filter(c => c.presupuestado > 0 || c.real > 0)
+      : presupuestoVsReal.filter(c => c.name === budgetCategoryFilter);
+
+    const tendenciaHistorica = getBudgetMonths().filter(m => m.isPast || m.isCurrent).map(month => ({
+      month: month.label,
+      presupuestado: getTotalBudgetForMonth(month.key),
+      real: getTotalExpensesForMonth(month.key),
+    }));
+    
+    // Lista de categorías existentes en gastos para el dropdown
+    const categoriasDeGastos = [...new Set(expenses.map(e => e.category))].filter(c => c && c !== 'Otro').sort();
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 text-gray-900">
+        <div className="max-w-full mx-auto px-4 py-6 md:py-10">
+          <header className="bg-white rounded-3xl shadow-xl p-6 md:p-8 mb-8 border border-purple-100">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <button onClick={() => setCurrentPage('saldo')} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft className="w-6 h-6 text-gray-600" /></button>
+                <div>
+                  <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Presupuesto 📋</h1>
+                  <p className="text-gray-600 mt-1">Proyección y control de gastos</p>
+                </div>
+              </div>
+              <div className="flex gap-3 flex-wrap">
+                <button onClick={() => setCurrentPage('saldo')} className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium"><Wallet className="w-4 h-4" />Saldo</button>
+                <button onClick={() => setCurrentPage('installments')} className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium"><CreditCard className="w-4 h-4" />Cuotas</button>
+                <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold"><LogOut className="w-4 h-4" />Salir</button>
+              </div>
+            </div>
+          </header>
+
+          <div className="bg-white rounded-2xl shadow-lg p-4 mb-6 border border-purple-100 flex items-center gap-4 flex-wrap">
+            <label className="font-medium text-gray-700">Mes:</label>
+            <input type="month" value={selectedBudgetMonth} onChange={(e) => setSelectedBudgetMonth(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-xl" />
+            <button onClick={() => copyBudgetFromPreviousMonth(selectedBudgetMonth)} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-xl hover:bg-blue-200 font-medium disabled:opacity-50"><Copy className="w-4 h-4" />Copiar del mes anterior</button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
+            <div className="bg-white rounded-2xl shadow-lg p-5 border border-green-100">
+              <div className="flex items-center justify-between">
+                <div><p className="text-gray-600 text-xs font-medium">Total Presupuestado</p><p className="text-xl font-bold text-green-600 mt-1">€{totalPresupuestado.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
+                <div className="bg-green-100 p-2 rounded-xl"><Target className="text-green-600 w-6 h-6" /></div>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-lg p-5 border border-red-100">
+              <div className="flex items-center justify-between">
+                <div><p className="text-gray-600 text-xs font-medium">Total Gastado</p><p className="text-xl font-bold text-red-600 mt-1">€{totalGastado.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
+                <div className="bg-red-100 p-2 rounded-xl"><DollarSign className="text-red-600 w-6 h-6" /></div>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-lg p-5 border border-orange-100">
+              <div className="flex items-center justify-between">
+                <div><p className="text-gray-600 text-xs font-medium">Cuotas del Mes</p><p className="text-xl font-bold text-orange-600 mt-1">€{cuotasDelMes.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
+                <div className="bg-orange-100 p-2 rounded-xl"><CreditCard className="text-orange-600 w-6 h-6" /></div>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-lg p-5 border border-purple-100">
+              <div className="flex items-center justify-between">
+                <div><p className="text-gray-600 text-xs font-medium">% Cumplimiento</p><p className={`text-xl font-bold mt-1 ${cumplimiento <= 100 ? 'text-green-600' : 'text-red-600'}`}>{cumplimiento.toFixed(1)}%</p></div>
+                <div className={`p-2 rounded-xl ${cumplimiento <= 100 ? 'bg-green-100' : 'bg-red-100'}`}><Percent className={`w-6 h-6 ${cumplimiento <= 100 ? 'text-green-600' : 'text-red-600'}`} /></div>
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-lg p-5 border border-cyan-100">
+              <div className="flex items-center justify-between">
+                <div><p className="text-gray-600 text-xs font-medium">Categorías Excedidas</p><p className={`text-xl font-bold mt-1 ${categoriasExcedidas.length === 0 ? 'text-green-600' : 'text-red-600'}`}>{categoriasExcedidas.length}</p></div>
+                <div className={`p-2 rounded-xl ${categoriasExcedidas.length === 0 ? 'bg-green-100' : 'bg-red-100'}`}><AlertTriangle className={`w-6 h-6 ${categoriasExcedidas.length === 0 ? 'text-green-600' : 'text-red-600'}`} /></div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100 mb-6">
+            <div className="flex justify-between mb-2">
+              <span className="font-medium text-gray-700">Progreso del Presupuesto</span>
+              <span className={`font-bold ${cumplimiento <= 100 ? 'text-green-600' : 'text-red-600'}`}>{cumplimiento.toFixed(1)}%</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-4">
+              <div className={`h-4 rounded-full transition-all ${cumplimiento <= 80 ? 'bg-green-500' : cumplimiento <= 100 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${Math.min(100, cumplimiento)}%` }}></div>
+            </div>
+            <p className="text-sm text-gray-500 mt-2">€{totalGastado.toLocaleString('es-ES', { minimumFractionDigits: 2 })} de €{totalPresupuestado.toLocaleString('es-ES', { minimumFractionDigits: 2 })} presupuestados (+ €{cuotasDelMes.toLocaleString('es-ES', { minimumFractionDigits: 2 })} en cuotas)</p>
+          </div>
+
+          <div className="flex flex-wrap gap-3 mb-6">
+            <button onClick={() => { setBudgetCategoryForm({ name: '', monthly_amount: '' }); setEditingBudgetCategory(null); setShowBudgetCategoryModal(true); }} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg font-semibold"><Plus className="w-4 h-4" />Nueva Categoría</button>
+            <select value={budgetCategoryFilter} onChange={(e) => setBudgetCategoryFilter(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-xl">
+              <option value="all">Todas las categorías</option>
+              {budgetCategories.map(cat => <option key={cat.id} value={cat.name}>{cat.name}</option>)}
+            </select>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100">
+              <h3 className="font-bold mb-4 text-gray-800">Presupuesto vs Real por Categoría</h3>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={dataParaGrafico}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="name" tick={{ fontSize: 9 }} angle={-45} textAnchor="end" height={80} interval={0} />
+                    <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `€${v}`} />
+                    <Tooltip formatter={(value) => [`€${value.toLocaleString('es-ES', { minimumFractionDigits: 2 })}`, '']} />
+                    <Legend />
+                    <Bar dataKey="presupuestado" fill="#10b981" name="Presupuestado" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="real" fill="#8b5cf6" name="Real" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-lg p-6 border border-pink-100">
+              <h3 className="font-bold mb-4 text-gray-800">Tendencia: Presupuesto vs Real</h3>
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={tendenciaHistorica}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `€${(v/1000).toFixed(0)}k`} />
+                    <Tooltip formatter={(value) => [`€${value.toLocaleString('es-ES', { minimumFractionDigits: 2 })}`, '']} />
+                    <Legend />
+                    <Line type="monotone" dataKey="presupuestado" stroke="#10b981" strokeWidth={2} name="Presupuestado" />
+                    <Line type="monotone" dataKey="real" stroke="#8b5cf6" strokeWidth={2} name="Real" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {categoriasExcedidas.length > 0 && (
+            <div className="bg-red-50 rounded-2xl shadow-lg p-6 border border-red-200 mb-6">
+              <h3 className="font-bold text-red-700 mb-3 flex items-center gap-2"><AlertTriangle className="w-5 h-5" />Categorías Excedidas</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {categoriasExcedidas.map(cat => (
+                  <div key={cat.name} className="bg-white rounded-xl p-4 border border-red-200">
+                    <p className="font-medium text-gray-800">{cat.name}</p>
+                    <p className="text-sm text-gray-600">Presupuesto: €{cat.presupuestado.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p>
+                    <p className="text-sm text-red-600 font-semibold">Gastado: €{cat.real.toLocaleString('es-ES', { minimumFractionDigits: 2 })} ({((cat.real / cat.presupuestado) * 100).toFixed(0)}%)</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100">
+            <h3 className="font-bold text-lg text-gray-800 mb-4 flex items-center gap-2"><Target className="w-5 h-5 text-green-600" />Presupuesto por Categoría</h3>
+            {budgetCategories.length === 0 ? (
+              <p className="text-gray-500 text-center py-8">No hay categorías de presupuesto. Agrega una para comenzar.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="border-b-2 border-purple-100">
+                      <th className="p-3 text-left font-semibold text-gray-700">Categoría</th>
+                      <th className="p-3 text-right font-semibold text-gray-700">Presupuestado</th>
+                      <th className="p-3 text-right font-semibold text-gray-700">Gastado</th>
+                      <th className="p-3 text-right font-semibold text-gray-700">Diferencia</th>
+                      <th className="p-3 text-center font-semibold text-gray-700">Estado</th>
+                      <th className="p-3 text-center font-semibold text-gray-700">Acción</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {budgetCategories.map(cat => {
+                      const presupuestado = getBudgetAmountForCategory(cat.id, currentMonthKey);
+                      const real = getRealExpenseByCategory(cat.name, currentMonthKey);
+                      const diferencia = presupuestado - real;
+                      const excedido = real > presupuestado && presupuestado > 0;
+                      return (
+                        <tr key={cat.id} className={`border-b border-gray-100 ${excedido ? 'bg-red-50' : 'hover:bg-green-50'}`}>
+                          <td className="p-3 font-medium text-gray-800">{cat.name}</td>
+                          <td className="p-3 text-right">
+                            <input type="number" step="0.01" className="w-24 px-2 py-1 border border-gray-300 rounded text-right" value={presupuestado || ''} onChange={async (e) => { const amount = e.target.value; await saveBudgetMonthlyToDb(cat.id, currentMonthKey, amount); const { data } = await supabase.from('budget_monthly').select('*').eq('group_id', groupId); setBudgetMonthly(data || []); }} placeholder="0.00" />
+                          </td>
+                          <td className="p-3 text-right font-semibold text-gray-600">€{real.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</td>
+                          <td className={`p-3 text-right font-semibold ${diferencia >= 0 ? 'text-green-600' : 'text-red-600'}`}>{diferencia >= 0 ? '+' : ''}€{diferencia.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</td>
+                          <td className="p-3 text-center">{presupuestado > 0 ? (<span className={`px-2 py-1 rounded-full text-xs font-medium ${excedido ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{excedido ? 'Excedido' : 'OK'}</span>) : <span className="text-gray-400">-</span>}</td>
+                          <td className="p-3 text-center">
+                            <div className="flex justify-center gap-1">
+                              <button onClick={() => { setEditingBudgetCategory(cat); setBudgetCategoryForm({ name: cat.name, monthly_amount: String(cat.monthly_amount) }); setShowBudgetCategoryModal(true); }} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded"><Edit2 className="w-4 h-4" /></button>
+                              <button onClick={async () => { if (window.confirm('¿Eliminar esta categoría?')) { await deleteBudgetCategoryFromDb(cat.id); setBudgetCategories(budgetCategories.filter(c => c.id !== cat.id)); }}} className="p-1.5 text-red-600 hover:bg-red-100 rounded"><Trash2 className="w-4 h-4" /></button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    <tr className="border-t-2 border-purple-200 bg-purple-50 font-bold">
+                      <td className="p-3 text-purple-700">TOTAL</td>
+                      <td className="p-3 text-right text-purple-700">€{totalPresupuestado.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</td>
+                      <td className="p-3 text-right text-purple-700">€{totalGastado.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</td>
+                      <td className={`p-3 text-right font-bold ${(totalPresupuestado - totalGastado) >= 0 ? 'text-green-600' : 'text-red-600'}`}>{(totalPresupuestado - totalGastado) >= 0 ? '+' : ''}€{(totalPresupuestado - totalGastado).toLocaleString('es-ES', { minimumFractionDigits: 2 })}</td>
+                      <td></td>
+                      <td></td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {showBudgetCategoryModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-xl text-gray-800">{editingBudgetCategory ? 'Editar Categoría' : 'Nueva Categoría'}</h3>
+                  <button onClick={() => setShowBudgetCategoryModal(false)} className="text-gray-500 hover:text-gray-700"><X className="w-6 h-6" /></button>
+                </div>
+                <div className="space-y-4">
+                  {!editingBudgetCategory && categoriasDeGastos.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Seleccionar de Gastos Existentes</label>
+                      <select onChange={(e) => { if (e.target.value) setBudgetCategoryForm({ ...budgetCategoryForm, name: e.target.value }); }} className="w-full px-4 py-3 border border-gray-300 rounded-xl">
+                        <option value="">-- Elegir categoría existente --</option>
+                        {categoriasDeGastos.filter(c => !budgetCategories.some(bc => bc.name === c)).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                      </select>
+                      <p className="text-xs text-gray-500 mt-1">O escribe un nombre nuevo abajo</p>
+                    </div>
+                  )}
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label><input type="text" placeholder="Ej: Alquiler" value={budgetCategoryForm.name} onChange={(e) => setBudgetCategoryForm({ ...budgetCategoryForm, name: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" /></div>
+                  <div><label className="block text-sm font-medium text-gray-700 mb-1">Monto Mensual por Defecto (€)</label><input type="number" step="0.01" placeholder="0.00" value={budgetCategoryForm.monthly_amount} onChange={(e) => setBudgetCategoryForm({ ...budgetCategoryForm, monthly_amount: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" /></div>
+                </div>
+                <div className="flex gap-3 mt-6">
+                  <button onClick={async () => {
+                    if (!budgetCategoryForm.name) { alert('Ingresa un nombre'); return; }
+                    if (editingBudgetCategory) {
+                      const updated = await updateBudgetCategoryInDb(editingBudgetCategory.id, { name: budgetCategoryForm.name, monthly_amount: parseFloat(budgetCategoryForm.monthly_amount) || 0 });
+                      if (updated) { setBudgetCategories(budgetCategories.map(c => c.id === editingBudgetCategory.id ? updated : c)); setShowBudgetCategoryModal(false); }
+                    } else {
+                      const saved = await saveBudgetCategoryToDb(budgetCategoryForm);
+                      if (saved) { setBudgetCategories([...budgetCategories, saved]); setShowBudgetCategoryModal(false); }
+                    }
+                  }} disabled={saving} className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg disabled:opacity-50"><Save className="w-5 h-5" />{saving ? 'Guardando...' : 'Guardar'}</button>
+                  <button onClick={() => setShowBudgetCategoryModal(false)} className="px-6 py-3 rounded-xl font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300">Cancelar</button>
                 </div>
               </div>
             </div>
@@ -1006,12 +2463,14 @@ const ExpenseTrackerApp = () => {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
               <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Gastos de Nicolás & Connie 💑</h1>
-              <p className="text-gray-600 mt-1">Gestión inteligente de gastos compartidos</p>
+              <p className="text-gray-600 mt-1">Gestión inteligente de finanzas familiares</p>
               <p className="text-xs text-gray-400 mt-1">{user.email}</p>
             </div>
             <div className="flex gap-3">
-              <button onClick={() => setCurrentPage('installments')} className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:shadow-lg font-semibold"><CreditCard className="w-4 h-4" />Cuotas</button>
-              <button onClick={handleLogout} className="flex items-center gap-2 px-6 py-3 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold"><LogOut className="w-4 h-4" />Cerrar sesión</button>
+              <button onClick={() => setCurrentPage('installments')} className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium"><CreditCard className="w-4 h-4" />Cuotas</button>
+              <button onClick={() => setCurrentPage('saldo')} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:shadow-lg font-semibold"><Wallet className="w-4 h-4" />Saldo</button>
+              <button onClick={() => setCurrentPage('presupuesto')} className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium"><Target className="w-4 h-4" />Presupuesto</button>
+              <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold"><LogOut className="w-4 h-4" />Salir</button>
             </div>
           </div>
         </header>
