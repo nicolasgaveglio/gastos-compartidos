@@ -2434,7 +2434,17 @@ const ExpenseTrackerApp = () => {
                       if (updated) { setBudgetCategories(budgetCategories.map(c => c.id === editingBudgetCategory.id ? updated : c)); setShowBudgetCategoryModal(false); }
                     } else {
                       const saved = await saveBudgetCategoryToDb(budgetCategoryForm);
-                      if (saved) { setBudgetCategories([...budgetCategories, saved]); setShowBudgetCategoryModal(false); }
+                      if (saved) { 
+                        setBudgetCategories([...budgetCategories, saved]); 
+                        // Si tiene monto, crear también el presupuesto para el mes seleccionado
+                        if (budgetCategoryForm.monthly_amount && parseFloat(budgetCategoryForm.monthly_amount) > 0) {
+                          const monthlyData = await saveBudgetMonthlyToDb(saved.id, selectedBudgetMonth, budgetCategoryForm.monthly_amount);
+                          if (monthlyData) {
+                            setBudgetMonthly([...budgetMonthly, monthlyData]);
+                          }
+                        }
+                        setShowBudgetCategoryModal(false); 
+                      }
                     }
                   }} disabled={saving} className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg disabled:opacity-50"><Save className="w-5 h-5" />{saving ? 'Guardando...' : 'Guardar'}</button>
                   <button onClick={() => setShowBudgetCategoryModal(false)} className="px-6 py-3 rounded-xl font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300">Cancelar</button>
