@@ -1578,56 +1578,56 @@ const ExpenseTrackerApp = () => {
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 text-gray-900">
-        <div className="max-w-full mx-auto px-4 py-6 md:py-10">
-          <header className="bg-white rounded-3xl shadow-xl p-6 md:p-8 mb-8 border border-purple-100">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <button onClick={() => setCurrentPage('expenses')} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft className="w-6 h-6 text-gray-600" /></button>
+        <div className="max-w-full mx-auto px-3 sm:px-4 py-4 md:py-10">
+          <header className="bg-white rounded-2xl sm:rounded-3xl shadow-xl p-4 sm:p-6 md:p-8 mb-6 md:mb-8 border border-purple-100">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <button onClick={() => setCurrentPage('expenses')} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600" /></button>
                 <div>
-                  <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Cuotas 📅</h1>
-                  <p className="text-gray-600 mt-1">Gestión de pagos en cuotas</p>
+                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Cuotas 📅</h1>
+                  <p className="text-gray-600 mt-1 text-sm sm:text-base">Gestión de pagos en cuotas</p>
                 </div>
               </div>
-              <div className="flex gap-3">
-                <button onClick={() => setCurrentPage('saldo')} className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium">
+              <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-2 sm:gap-3">
+                <button onClick={() => setCurrentPage('saldo')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base">
                   <Wallet className="w-4 h-4" />Saldo
                 </button>
-                <button onClick={() => setCurrentPage('presupuesto')} className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium">
-                  <Target className="w-4 h-4" />Presupuesto
+                <button onClick={() => setCurrentPage('presupuesto')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base">
+                  <Target className="w-4 h-4" /><span className="hidden sm:inline">Presupuesto</span><span className="sm:hidden">Presup.</span>
                 </button>
-                <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold">
+                <button onClick={handleLogout} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold text-xs sm:text-base">
                   <LogOut className="w-4 h-4" />Salir
                 </button>
               </div>
             </div>
           </header>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mb-8">
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 md:gap-6 mb-6 md:mb-8">
+            <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-6 border border-purple-100">
               <div className="flex items-center justify-between">
-                <div><p className="text-gray-600 text-sm font-medium">Cuotas Activas</p><p className="text-3xl font-bold text-purple-600 mt-1">{filtered.length}</p></div>
-                <div className="bg-purple-100 p-3 rounded-xl"><CreditCard className="text-purple-600 w-8 h-8" /></div>
+                <div><p className="text-gray-600 text-xs sm:text-sm font-medium">Cuotas Activas</p><p className="text-2xl sm:text-3xl font-bold text-purple-600 mt-1">{filtered.length}</p></div>
+                <div className="bg-purple-100 p-2 sm:p-3 rounded-xl"><CreditCard className="text-purple-600 w-6 h-6 sm:w-8 sm:h-8" /></div>
               </div>
             </div>
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-pink-100">
+            <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-6 border border-pink-100">
               <div className="flex items-center justify-between">
-                <div><p className="text-gray-600 text-sm font-medium">Este Mes</p><p className="text-3xl font-bold text-pink-600 mt-1">€{monthlyTotals.find(m => m.key === currentMonthKey)?.total.toFixed(2) || '0.00'}</p></div>
-                <div className="bg-pink-100 p-3 rounded-xl"><Calendar className="text-pink-600 w-8 h-8" /></div>
+                <div><p className="text-gray-600 text-xs sm:text-sm font-medium">Este Mes</p><p className="text-2xl sm:text-3xl font-bold text-pink-600 mt-1">€{monthlyTotals.find(m => m.key === currentMonthKey)?.total.toFixed(2) || '0.00'}</p></div>
+                <div className="bg-pink-100 p-2 sm:p-3 rounded-xl"><Calendar className="text-pink-600 w-6 h-6 sm:w-8 sm:h-8" /></div>
               </div>
             </div>
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-blue-100">
+            <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-6 border border-blue-100">
               <div className="flex items-center justify-between">
-                <div><p className="text-gray-600 text-sm font-medium">Total Pendiente</p><p className="text-3xl font-bold text-blue-600 mt-1">€{totalPending.toFixed(2)}</p></div>
-                <div className="bg-blue-100 p-3 rounded-xl"><DollarSign className="text-blue-600 w-8 h-8" /></div>
+                <div><p className="text-gray-600 text-xs sm:text-sm font-medium">Total Pendiente</p><p className="text-2xl sm:text-3xl font-bold text-blue-600 mt-1">€{totalPending.toFixed(2)}</p></div>
+                <div className="bg-blue-100 p-2 sm:p-3 rounded-xl"><DollarSign className="text-blue-600 w-6 h-6 sm:w-8 sm:h-8" /></div>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-3 mb-6 items-center">
-            <button onClick={() => openInstallmentModal()} disabled={saving || !isInitialized} className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg font-semibold disabled:opacity-50">
+          <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3 mb-6 items-stretch sm:items-center">
+            <button onClick={() => openInstallmentModal()} disabled={saving || !isInitialized} className="flex items-center justify-center gap-2 px-4 sm:px-6 py-3 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg font-semibold disabled:opacity-50 text-sm sm:text-base">
               <Plus className="w-4 h-4" />Agregar Cuota
             </button>
-            <select value={installmentFilter.person} onChange={(e) => setInstallmentFilter({ person: e.target.value })} className="px-4 py-3 border border-gray-300 rounded-xl">
+            <select value={installmentFilter.person} onChange={(e) => setInstallmentFilter({ person: e.target.value })} className="px-4 py-3 border border-gray-300 rounded-xl text-sm sm:text-base">
               <option value="all">👥 Ambos</option>
               <option value="Nicolás">👤 Nicolás</option>
               <option value="Connie">👤 Connie</option>
@@ -1790,24 +1790,24 @@ const ExpenseTrackerApp = () => {
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 text-gray-900">
-        <div className="max-w-full mx-auto px-4 py-6 md:py-10">
-          <header className="bg-white rounded-3xl shadow-xl p-6 md:p-8 mb-8 border border-purple-100">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <button onClick={() => setCurrentPage('expenses')} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft className="w-6 h-6 text-gray-600" /></button>
+        <div className="max-w-full mx-auto px-3 sm:px-4 py-4 md:py-10">
+          <header className="bg-white rounded-2xl sm:rounded-3xl shadow-xl p-4 sm:p-6 md:p-8 mb-6 md:mb-8 border border-purple-100">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <button onClick={() => setCurrentPage('expenses')} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600" /></button>
                 <div>
-                  <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Saldo 💰</h1>
-                  <p className="text-gray-600 mt-1">Control de patrimonio familiar</p>
+                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Saldo 💰</h1>
+                  <p className="text-gray-600 mt-1 text-sm sm:text-base">Control de patrimonio familiar</p>
                 </div>
               </div>
-              <div className="flex gap-3 flex-wrap">
-                <button onClick={() => setCurrentPage('presupuesto')} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:shadow-lg font-semibold">
-                  <Target className="w-4 h-4" />Presupuesto
+              <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-2 sm:gap-3">
+                <button onClick={() => setCurrentPage('presupuesto')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:shadow-lg font-semibold text-xs sm:text-base">
+                  <Target className="w-4 h-4" /><span className="hidden sm:inline">Presupuesto</span><span className="sm:hidden">Presup.</span>
                 </button>
-                <button onClick={() => setCurrentPage('installments')} className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium">
+                <button onClick={() => setCurrentPage('installments')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base">
                   <CreditCard className="w-4 h-4" />Cuotas
                 </button>
-                <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold">
+                <button onClick={handleLogout} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold text-xs sm:text-base">
                   <LogOut className="w-4 h-4" />Salir
                 </button>
               </div>
@@ -1815,58 +1815,58 @@ const ExpenseTrackerApp = () => {
           </header>
 
           {/* Stats Cards - Fila 1 */}
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
-            <div className="bg-white rounded-2xl shadow-lg p-5 border border-purple-100">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 mb-6">
+            <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-5 border border-purple-100">
               <div className="flex items-center justify-between">
-                <div><p className="text-gray-600 text-xs font-medium">Patrimonio Actual</p><p className="text-xl font-bold text-purple-600 mt-1">€{patrimonioActual.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
-                <div className="bg-purple-100 p-2 rounded-xl"><PiggyBank className="text-purple-600 w-6 h-6" /></div>
+                <div><p className="text-gray-600 text-xs font-medium">Patrimonio Actual</p><p className="text-lg sm:text-xl font-bold text-purple-600 mt-1">€{patrimonioActual.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
+                <div className="bg-purple-100 p-2 rounded-xl hidden sm:block"><PiggyBank className="text-purple-600 w-6 h-6" /></div>
               </div>
             </div>
-            <div className="bg-white rounded-2xl shadow-lg p-5 border border-green-100">
+            <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-5 border border-green-100">
               <div className="flex items-center justify-between">
-                <div><p className="text-gray-600 text-xs font-medium">Ingresos Este Mes</p><p className="text-xl font-bold text-green-600 mt-1">€{ingresosEsteMes.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
-                <div className="bg-green-100 p-2 rounded-xl"><TrendingUp className="text-green-600 w-6 h-6" /></div>
+                <div><p className="text-gray-600 text-xs font-medium">Ingresos Este Mes</p><p className="text-lg sm:text-xl font-bold text-green-600 mt-1">€{ingresosEsteMes.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
+                <div className="bg-green-100 p-2 rounded-xl hidden sm:block"><TrendingUp className="text-green-600 w-6 h-6" /></div>
               </div>
             </div>
-            <div className="bg-white rounded-2xl shadow-lg p-5 border border-red-100">
+            <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-5 border border-red-100">
               <div className="flex items-center justify-between">
-                <div><p className="text-gray-600 text-xs font-medium">Gastos Este Mes</p><p className="text-xl font-bold text-red-600 mt-1">€{gastosEsteMes.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
-                <div className="bg-red-100 p-2 rounded-xl"><TrendingDown className="text-red-600 w-6 h-6" /></div>
+                <div><p className="text-gray-600 text-xs font-medium">Gastos Este Mes</p><p className="text-lg sm:text-xl font-bold text-red-600 mt-1">€{gastosEsteMes.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
+                <div className="bg-red-100 p-2 rounded-xl hidden sm:block"><TrendingDown className="text-red-600 w-6 h-6" /></div>
               </div>
             </div>
-            <div className="bg-white rounded-2xl shadow-lg p-5 border border-blue-100">
+            <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-5 border border-blue-100">
               <div className="flex items-center justify-between">
-                <div><p className="text-gray-600 text-xs font-medium">Ahorro del Mes</p><p className={`text-xl font-bold mt-1 ${ahorroDelMes >= 0 ? 'text-blue-600' : 'text-red-600'}`}>{ahorroDelMes >= 0 ? '€' : '-€'}{Math.abs(ahorroDelMes).toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
-                <div className="bg-blue-100 p-2 rounded-xl"><DollarSign className="text-blue-600 w-6 h-6" /></div>
+                <div><p className="text-gray-600 text-xs font-medium">Ahorro del Mes</p><p className={`text-lg sm:text-xl font-bold mt-1 ${ahorroDelMes >= 0 ? 'text-blue-600' : 'text-red-600'}`}>{ahorroDelMes >= 0 ? '€' : '-€'}{Math.abs(ahorroDelMes).toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
+                <div className="bg-blue-100 p-2 rounded-xl hidden sm:block"><DollarSign className="text-blue-600 w-6 h-6" /></div>
               </div>
             </div>
-            <div className="bg-white rounded-2xl shadow-lg p-5 border border-cyan-100">
+            <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-5 border border-cyan-100">
               <div className="flex items-center justify-between">
-                <div><p className="text-gray-600 text-xs font-medium">Tasa de Ahorro</p><p className={`text-xl font-bold mt-1 ${tasaAhorro >= 0 ? 'text-cyan-600' : 'text-red-600'}`}>{tasaAhorro.toFixed(1)}%</p></div>
-                <div className="bg-cyan-100 p-2 rounded-xl"><Percent className="text-cyan-600 w-6 h-6" /></div>
+                <div><p className="text-gray-600 text-xs font-medium">Tasa de Ahorro</p><p className={`text-lg sm:text-xl font-bold mt-1 ${tasaAhorro >= 0 ? 'text-cyan-600' : 'text-red-600'}`}>{tasaAhorro.toFixed(1)}%</p></div>
+                <div className="bg-cyan-100 p-2 rounded-xl hidden sm:block"><Percent className="text-cyan-600 w-6 h-6" /></div>
               </div>
             </div>
-            <div className="bg-white rounded-2xl shadow-lg p-5 border border-orange-100">
+            <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-5 border border-orange-100">
               <div className="flex items-center justify-between">
-                <div><p className="text-gray-600 text-xs font-medium">Var. vs Mes Ant.</p><p className={`text-xl font-bold mt-1 ${variacionMes >= 0 ? 'text-green-600' : 'text-red-600'}`}>{variacionMes >= 0 ? '+' : ''}€{variacionMes.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
-                <div className={`p-2 rounded-xl ${variacionMes >= 0 ? 'bg-green-100' : 'bg-red-100'}`}>{variacionMes >= 0 ? <TrendingUp className="text-green-600 w-6 h-6" /> : <TrendingDown className="text-red-600 w-6 h-6" />}</div>
+                <div><p className="text-gray-600 text-xs font-medium">Var. vs Mes Ant.</p><p className={`text-lg sm:text-xl font-bold mt-1 ${variacionMes >= 0 ? 'text-green-600' : 'text-red-600'}`}>{variacionMes >= 0 ? '+' : ''}€{variacionMes.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
+                <div className={`p-2 rounded-xl hidden sm:block ${variacionMes >= 0 ? 'bg-green-100' : 'bg-red-100'}`}>{variacionMes >= 0 ? <TrendingUp className="text-green-600 w-6 h-6" /> : <TrendingDown className="text-red-600 w-6 h-6" />}</div>
               </div>
             </div>
           </div>
 
           {/* Meta de Ahorro */}
           {metaActiva && (
-            <div className="bg-white rounded-2xl shadow-lg p-6 border border-yellow-100 mb-6">
-              <div className="flex items-center justify-between mb-3">
+            <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-6 border border-yellow-100 mb-6">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-2">
                 <div className="flex items-center gap-3">
-                  <Target className="text-yellow-600 w-6 h-6" />
+                  <Target className="text-yellow-600 w-5 h-5 sm:w-6 sm:h-6" />
                   <div>
-                    <h3 className="font-bold text-gray-800">{metaActiva.name}</h3>
-                    <p className="text-sm text-gray-500">Meta: €{Number(metaActiva.target_amount).toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p>
+                    <h3 className="font-bold text-gray-800 text-sm sm:text-base">{metaActiva.name}</h3>
+                    <p className="text-xs sm:text-sm text-gray-500">Meta: €{Number(metaActiva.target_amount).toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-2xl font-bold text-yellow-600">{Math.min(100, progresoMeta).toFixed(1)}%</p>
+                <div className="text-left sm:text-right">
+                  <p className="text-xl sm:text-2xl font-bold text-yellow-600">{Math.min(100, progresoMeta).toFixed(1)}%</p>
                   <p className="text-xs text-gray-500">completado</p>
                 </div>
               </div>
@@ -1882,31 +1882,31 @@ const ExpenseTrackerApp = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-purple-100 text-sm font-medium">Proyección a Fin de Año</p>
-                <p className="text-3xl font-bold mt-1">€{proyeccionFinAno.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p>
+                <p className="text-2xl sm:text-3xl font-bold mt-1">€{proyeccionFinAno.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p>
                 <p className="text-purple-200 text-xs mt-1">Basado en tu promedio de ahorro mensual</p>
               </div>
-              <TrendingUp className="w-12 h-12 text-purple-200" />
+              <TrendingUp className="w-8 h-8 sm:w-12 sm:h-12 text-purple-200" />
             </div>
           </div>
 
           {/* Acciones */}
-          <div className="flex flex-wrap gap-3 mb-6">
-            <button onClick={() => openAccountModal()} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:shadow-lg font-semibold">
-              <Plus className="w-4 h-4" />Nueva Cuenta
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 sm:gap-3 mb-6">
+            <button onClick={() => openAccountModal()} className="flex items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:shadow-lg font-semibold text-xs sm:text-base">
+              <Plus className="w-4 h-4" /><span className="hidden sm:inline">Nueva Cuenta</span><span className="sm:hidden">Cuenta</span>
             </button>
-            <button onClick={() => openBalanceModal()} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg font-semibold">
-              <Wallet className="w-4 h-4" />Actualizar Saldo
+            <button onClick={() => openBalanceModal()} className="flex items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg font-semibold text-xs sm:text-base">
+              <Wallet className="w-4 h-4" /><span className="hidden sm:inline">Actualizar Saldo</span><span className="sm:hidden">Saldo</span>
             </button>
-            <button onClick={() => openIncomeModal()} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg font-semibold">
-              <Plus className="w-4 h-4" />Agregar Ingreso
+            <button onClick={() => openIncomeModal()} className="flex items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg font-semibold text-xs sm:text-base">
+              <Plus className="w-4 h-4" /><span className="hidden sm:inline">Agregar Ingreso</span><span className="sm:hidden">Ingreso</span>
             </button>
-            <button onClick={() => setShowSavingsGoalModal(true)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-yellow-500 to-orange-500 text-white hover:shadow-lg font-semibold">
-              <Target className="w-4 h-4" />Nueva Meta
+            <button onClick={() => setShowSavingsGoalModal(true)} className="flex items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl bg-gradient-to-r from-yellow-500 to-orange-500 text-white hover:shadow-lg font-semibold text-xs sm:text-base">
+              <Target className="w-4 h-4" /><span className="hidden sm:inline">Nueva Meta</span><span className="sm:hidden">Meta</span>
             </button>
           </div>
 
           {/* Gráficos */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-6 sm:mb-8">
             {/* Patrimonio Histórico */}
             <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100">
               <h3 className="font-bold mb-4 text-gray-800">Patrimonio Histórico</h3>
@@ -2223,70 +2223,70 @@ const ExpenseTrackerApp = () => {
 
     return (
       <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 text-gray-900">
-        <div className="max-w-full mx-auto px-4 py-6 md:py-10">
-          <header className="bg-white rounded-3xl shadow-xl p-6 md:p-8 mb-8 border border-purple-100">
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-              <div className="flex items-center gap-4">
-                <button onClick={() => setCurrentPage('saldo')} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft className="w-6 h-6 text-gray-600" /></button>
+        <div className="max-w-full mx-auto px-3 sm:px-4 py-4 md:py-10">
+          <header className="bg-white rounded-2xl sm:rounded-3xl shadow-xl p-4 sm:p-6 md:p-8 mb-6 md:mb-8 border border-purple-100">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <button onClick={() => setCurrentPage('saldo')} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600" /></button>
                 <div>
-                  <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Presupuesto 📋</h1>
-                  <p className="text-gray-600 mt-1">Proyección y control de gastos</p>
+                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Presupuesto 📋</h1>
+                  <p className="text-gray-600 mt-1 text-sm sm:text-base">Proyección y control de gastos</p>
                 </div>
               </div>
-              <div className="flex gap-3 flex-wrap">
-                <button onClick={() => setCurrentPage('saldo')} className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium"><Wallet className="w-4 h-4" />Saldo</button>
-                <button onClick={() => setCurrentPage('installments')} className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium"><CreditCard className="w-4 h-4" />Cuotas</button>
-                <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold"><LogOut className="w-4 h-4" />Salir</button>
+              <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-2 sm:gap-3">
+                <button onClick={() => setCurrentPage('saldo')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base"><Wallet className="w-4 h-4" />Saldo</button>
+                <button onClick={() => setCurrentPage('installments')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base"><CreditCard className="w-4 h-4" />Cuotas</button>
+                <button onClick={handleLogout} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold text-xs sm:text-base"><LogOut className="w-4 h-4" />Salir</button>
               </div>
             </div>
           </header>
 
-          <div className="bg-white rounded-2xl shadow-lg p-4 mb-6 border border-purple-100 flex items-center gap-4 flex-wrap">
-            <label className="font-medium text-gray-700">Mes:</label>
-            <input type="month" value={selectedBudgetMonth} onChange={(e) => setSelectedBudgetMonth(e.target.value)} className="px-4 py-2 border border-gray-300 rounded-xl" />
-            <button onClick={() => copyBudgetFromPreviousMonth(selectedBudgetMonth)} disabled={saving} className="flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-xl hover:bg-blue-200 font-medium disabled:opacity-50"><Copy className="w-4 h-4" />Copiar del mes anterior</button>
+          <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-4 mb-6 border border-purple-100 flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-4">
+            <label className="font-medium text-gray-700 text-sm sm:text-base">Mes:</label>
+            <input type="month" value={selectedBudgetMonth} onChange={(e) => setSelectedBudgetMonth(e.target.value)} className="px-3 sm:px-4 py-2 border border-gray-300 rounded-xl text-sm sm:text-base" />
+            <button onClick={() => copyBudgetFromPreviousMonth(selectedBudgetMonth)} disabled={saving} className="flex items-center justify-center gap-2 px-3 sm:px-4 py-2 bg-blue-100 text-blue-700 rounded-xl hover:bg-blue-200 font-medium disabled:opacity-50 text-xs sm:text-base"><Copy className="w-4 h-4" /><span className="hidden sm:inline">Copiar del mes anterior</span><span className="sm:hidden">Copiar mes ant.</span></button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 mb-6">
-            <div className="bg-white rounded-2xl shadow-lg p-5 border border-green-100">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4 mb-6">
+            <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-5 border border-green-100">
               <div className="flex items-center justify-between">
-                <div><p className="text-gray-600 text-xs font-medium">Total Presupuestado</p><p className="text-xl font-bold text-green-600 mt-1">€{totalPresupuestado.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
-                <div className="bg-green-100 p-2 rounded-xl"><Target className="text-green-600 w-6 h-6" /></div>
+                <div><p className="text-gray-600 text-xs font-medium">Total Presupuestado</p><p className="text-lg sm:text-xl font-bold text-green-600 mt-1">€{totalPresupuestado.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
+                <div className="bg-green-100 p-2 rounded-xl hidden sm:block"><Target className="text-green-600 w-6 h-6" /></div>
               </div>
             </div>
-            <div className="bg-white rounded-2xl shadow-lg p-5 border border-red-100">
+            <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-5 border border-red-100">
               <div className="flex items-center justify-between">
-                <div><p className="text-gray-600 text-xs font-medium">Total Gastado</p><p className="text-xl font-bold text-red-600 mt-1">€{totalGastado.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
-                <div className="bg-red-100 p-2 rounded-xl"><DollarSign className="text-red-600 w-6 h-6" /></div>
+                <div><p className="text-gray-600 text-xs font-medium">Total Gastado</p><p className="text-lg sm:text-xl font-bold text-red-600 mt-1">€{totalGastado.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
+                <div className="bg-red-100 p-2 rounded-xl hidden sm:block"><DollarSign className="text-red-600 w-6 h-6" /></div>
               </div>
             </div>
-            <div className="bg-white rounded-2xl shadow-lg p-5 border border-orange-100">
+            <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-5 border border-orange-100">
               <div className="flex items-center justify-between">
-                <div><p className="text-gray-600 text-xs font-medium">Cuotas del Mes</p><p className="text-xl font-bold text-orange-600 mt-1">€{cuotasDelMes.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
-                <div className="bg-orange-100 p-2 rounded-xl"><CreditCard className="text-orange-600 w-6 h-6" /></div>
+                <div><p className="text-gray-600 text-xs font-medium">Cuotas del Mes</p><p className="text-lg sm:text-xl font-bold text-orange-600 mt-1">€{cuotasDelMes.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</p></div>
+                <div className="bg-orange-100 p-2 rounded-xl hidden sm:block"><CreditCard className="text-orange-600 w-6 h-6" /></div>
               </div>
             </div>
-            <div className="bg-white rounded-2xl shadow-lg p-5 border border-purple-100">
+            <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-5 border border-purple-100">
               <div className="flex items-center justify-between">
-                <div><p className="text-gray-600 text-xs font-medium">% Cumplimiento</p><p className={`text-xl font-bold mt-1 ${cumplimiento <= 100 ? 'text-green-600' : 'text-red-600'}`}>{cumplimiento.toFixed(1)}%</p></div>
-                <div className={`p-2 rounded-xl ${cumplimiento <= 100 ? 'bg-green-100' : 'bg-red-100'}`}><Percent className={`w-6 h-6 ${cumplimiento <= 100 ? 'text-green-600' : 'text-red-600'}`} /></div>
+                <div><p className="text-gray-600 text-xs font-medium">% Cumplimiento</p><p className={`text-lg sm:text-xl font-bold mt-1 ${cumplimiento <= 100 ? 'text-green-600' : 'text-red-600'}`}>{cumplimiento.toFixed(1)}%</p></div>
+                <div className={`p-2 rounded-xl hidden sm:block ${cumplimiento <= 100 ? 'bg-green-100' : 'bg-red-100'}`}><Percent className={`w-6 h-6 ${cumplimiento <= 100 ? 'text-green-600' : 'text-red-600'}`} /></div>
               </div>
             </div>
-            <div className="bg-white rounded-2xl shadow-lg p-5 border border-cyan-100">
+            <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-5 border border-cyan-100 col-span-2 sm:col-span-1">
               <div className="flex items-center justify-between">
-                <div><p className="text-gray-600 text-xs font-medium">Categorías Excedidas</p><p className={`text-xl font-bold mt-1 ${categoriasExcedidas.length === 0 ? 'text-green-600' : 'text-red-600'}`}>{categoriasExcedidas.length}</p></div>
-                <div className={`p-2 rounded-xl ${categoriasExcedidas.length === 0 ? 'bg-green-100' : 'bg-red-100'}`}><AlertTriangle className={`w-6 h-6 ${categoriasExcedidas.length === 0 ? 'text-green-600' : 'text-red-600'}`} /></div>
+                <div><p className="text-gray-600 text-xs font-medium">Categorías Excedidas</p><p className={`text-lg sm:text-xl font-bold mt-1 ${categoriasExcedidas.length === 0 ? 'text-green-600' : 'text-red-600'}`}>{categoriasExcedidas.length}</p></div>
+                <div className={`p-2 rounded-xl hidden sm:block ${categoriasExcedidas.length === 0 ? 'bg-green-100' : 'bg-red-100'}`}><AlertTriangle className={`w-6 h-6 ${categoriasExcedidas.length === 0 ? 'text-green-600' : 'text-red-600'}`} /></div>
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100 mb-6">
+          <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-6 border border-purple-100 mb-6">
             <div className="flex justify-between mb-2">
-              <span className="font-medium text-gray-700">Progreso del Presupuesto</span>
-              <span className={`font-bold ${cumplimiento <= 100 ? 'text-green-600' : 'text-red-600'}`}>{cumplimiento.toFixed(1)}%</span>
+              <span className="font-medium text-gray-700 text-sm sm:text-base">Progreso del Presupuesto</span>
+              <span className={`font-bold text-sm sm:text-base ${cumplimiento <= 100 ? 'text-green-600' : 'text-red-600'}`}>{cumplimiento.toFixed(1)}%</span>
             </div>
-            <div className="w-full bg-gray-200 rounded-full h-4">
-              <div className={`h-4 rounded-full transition-all ${cumplimiento <= 80 ? 'bg-green-500' : cumplimiento <= 100 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${Math.min(100, cumplimiento)}%` }}></div>
+            <div className="w-full bg-gray-200 rounded-full h-3 sm:h-4">
+              <div className={`h-3 sm:h-4 rounded-full transition-all ${cumplimiento <= 80 ? 'bg-green-500' : cumplimiento <= 100 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${Math.min(100, cumplimiento)}%` }}></div>
             </div>
             <p className="text-sm text-gray-500 mt-2">€{totalGastado.toLocaleString('es-ES', { minimumFractionDigits: 2 })} de €{totalPresupuestado.toLocaleString('es-ES', { minimumFractionDigits: 2 })} presupuestados (+ €{cuotasDelMes.toLocaleString('es-ES', { minimumFractionDigits: 2 })} en cuotas)</p>
           </div>
@@ -2468,41 +2468,41 @@ const ExpenseTrackerApp = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 text-gray-900">
-      <div className="max-w-7xl mx-auto px-4 py-6 md:py-10">
-        <header className="bg-white rounded-3xl shadow-xl p-6 md:p-8 mb-8 border border-purple-100">
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 md:py-10">
+        <header className="bg-white rounded-2xl sm:rounded-3xl shadow-xl p-4 sm:p-6 md:p-8 mb-6 md:mb-8 border border-purple-100">
+          <div className="flex flex-col gap-4">
             <div>
-              <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Gastos de Nicolás & Connie 💑</h1>
-              <p className="text-gray-600 mt-1">Gestión inteligente de finanzas familiares</p>
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Gastos de Nicolás & Connie 💑</h1>
+              <p className="text-gray-600 mt-1 text-sm sm:text-base">Gestión inteligente de finanzas familiares</p>
               <p className="text-xs text-gray-400 mt-1">{user.email}</p>
             </div>
-            <div className="flex gap-3">
-              <button onClick={() => setCurrentPage('installments')} className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium"><CreditCard className="w-4 h-4" />Cuotas</button>
-              <button onClick={() => setCurrentPage('saldo')} className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:shadow-lg font-semibold"><Wallet className="w-4 h-4" />Saldo</button>
-              <button onClick={() => setCurrentPage('presupuesto')} className="flex items-center gap-2 px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium"><Target className="w-4 h-4" />Presupuesto</button>
-              <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold"><LogOut className="w-4 h-4" />Salir</button>
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 sm:gap-3">
+              <button onClick={() => setCurrentPage('installments')} className="flex items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-sm sm:text-base"><CreditCard className="w-4 h-4" /><span className="hidden xs:inline">Cuotas</span><span className="xs:hidden">Cuotas</span></button>
+              <button onClick={() => setCurrentPage('saldo')} className="flex items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:shadow-lg font-semibold text-sm sm:text-base"><Wallet className="w-4 h-4" />Saldo</button>
+              <button onClick={() => setCurrentPage('presupuesto')} className="flex items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-sm sm:text-base"><Target className="w-4 h-4" /><span className="hidden sm:inline">Presupuesto</span><span className="sm:hidden">Presup.</span></button>
+              <button onClick={handleLogout} className="flex items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold text-sm sm:text-base"><LogOut className="w-4 h-4" />Salir</button>
             </div>
           </div>
         </header>
 
-        <div className="flex flex-wrap gap-3 mb-6 items-center">
-          <button onClick={openManualExpenseModal} disabled={saving || !isInitialized} className="flex items-center gap-2 px-6 py-3 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg font-semibold disabled:opacity-50"><Plus className="w-4 h-4" />Agregar Gasto</button>
+        <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3 mb-6 items-stretch sm:items-center">
+          <button onClick={openManualExpenseModal} disabled={saving || !isInitialized} className="flex items-center justify-center gap-2 px-4 sm:px-6 py-3 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg font-semibold disabled:opacity-50 text-sm sm:text-base"><Plus className="w-4 h-4" />Agregar Gasto</button>
           <label className="relative cursor-pointer">
             <input type="file" accept=".xls,.xlsx" onChange={handleFileUpload} className="hidden" disabled={uploading || !isInitialized} />
-            <div className={`flex items-center gap-2 px-6 py-3 rounded-xl font-semibold ${uploading || !isInitialized ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg'}`}><Upload className="w-4 h-4" />{uploading ? 'Procesando...' : 'Subir Extracto'}</div>
+            <div className={`flex items-center justify-center gap-2 px-4 sm:px-6 py-3 rounded-xl font-semibold text-sm sm:text-base ${uploading || !isInitialized ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg'}`}><Upload className="w-4 h-4" />{uploading ? 'Procesando...' : 'Subir Extracto'}</div>
           </label>
-          <button onClick={() => setShowCategoryManager(true)} className="flex items-center gap-2 px-4 py-3 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium ml-auto"><ListChecks className="w-4 h-4" />Gestionar Categorías</button>
+          <button onClick={() => setShowCategoryManager(true)} className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium sm:ml-auto text-sm sm:text-base"><ListChecks className="w-4 h-4" />Gestionar Categorías</button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6 mb-8">
-          <div className="bg-white rounded-2xl shadow-lg p-6 border border-purple-100">
-            <div className="flex items-center justify-between"><div><p className="text-gray-600 text-sm font-medium">Total Gastado</p><p className="text-3xl font-bold text-purple-600 mt-1">€{totalExpenses.toFixed(2)}</p></div><div className="bg-purple-100 p-3 rounded-xl"><DollarSign className="text-purple-600 w-8 h-8" /></div></div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 md:gap-6 mb-6 md:mb-8">
+          <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-6 border border-purple-100">
+            <div className="flex items-center justify-between"><div><p className="text-gray-600 text-xs sm:text-sm font-medium">Total Gastado</p><p className="text-2xl sm:text-3xl font-bold text-purple-600 mt-1">€{totalExpenses.toFixed(2)}</p></div><div className="bg-purple-100 p-2 sm:p-3 rounded-xl"><DollarSign className="text-purple-600 w-6 h-6 sm:w-8 sm:h-8" /></div></div>
           </div>
-          <div className="bg-white rounded-2xl shadow-lg p-6 border border-pink-100">
-            <div className="flex items-center justify-between"><div><p className="text-gray-600 text-sm font-medium">Nicolás</p><p className="text-3xl font-bold text-pink-600 mt-1">€{(personData[0]?.value || 0).toFixed(2)}</p></div><div className="bg-pink-100 p-3 rounded-xl"><User className="text-pink-600 w-8 h-8" /></div></div>
+          <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-6 border border-pink-100">
+            <div className="flex items-center justify-between"><div><p className="text-gray-600 text-xs sm:text-sm font-medium">Nicolás</p><p className="text-2xl sm:text-3xl font-bold text-pink-600 mt-1">€{(personData[0]?.value || 0).toFixed(2)}</p></div><div className="bg-pink-100 p-2 sm:p-3 rounded-xl"><User className="text-pink-600 w-6 h-6 sm:w-8 sm:h-8" /></div></div>
           </div>
-          <div className="bg-white rounded-2xl shadow-lg p-6 border border-blue-100">
-            <div className="flex items-center justify-between"><div><p className="text-gray-600 text-sm font-medium">Connie</p><p className="text-3xl font-bold text-blue-600 mt-1">€{(personData[1]?.value || 0).toFixed(2)}</p></div><div className="bg-blue-100 p-3 rounded-xl"><User className="text-blue-600 w-8 h-8" /></div></div>
+          <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-6 border border-blue-100">
+            <div className="flex items-center justify-between"><div><p className="text-gray-600 text-xs sm:text-sm font-medium">Connie</p><p className="text-2xl sm:text-3xl font-bold text-blue-600 mt-1">€{(personData[1]?.value || 0).toFixed(2)}</p></div><div className="bg-blue-100 p-2 sm:p-3 rounded-xl"><User className="text-blue-600 w-6 h-6 sm:w-8 sm:h-8" /></div></div>
           </div>
         </div>
 
