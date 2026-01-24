@@ -3776,6 +3776,49 @@ const ExpenseTrackerApp = () => {
   
   const merchantData = getMerchantRanking();
 
+  // Calcular gastos variables vs presupuesto (excluyendo fijos)
+  const getVariableExpensesData = () => {
+    const FIXED_CATEGORIES = ['Alquiler', 'Luz', 'Electricidad', 'Agua', 'Gas', 'Internet', 'Internet + Celular', 'Celular', 'Seguro médico', 'Cuotas'];
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    
+    // Obtener categorías variables que tienen presupuesto o gastos
+    const variableCategories = budgetCategories.filter(cat => !FIXED_CATEGORIES.includes(cat.name));
+    
+    return variableCategories.map(cat => {
+      // Gasto real del mes
+      const gastado = expenses
+        .filter(exp => {
+          const parts = exp.date.split('/');
+          if (parts.length === 3) {
+            const expMonth = `${parts[2]}-${parts[1].padStart(2, '0')}`;
+            return expMonth === currentMonth && exp.category === cat.name;
+          }
+          return false;
+        })
+        .reduce((sum, exp) => sum + Number(exp.amount), 0);
+      
+      // Presupuesto del mes (de budget_monthly o default)
+      const budgetEntry = budgetMonthly.find(b => b.category_id === cat.id && b.month && b.month.slice(0, 7) === currentMonth);
+      const presupuestado = budgetEntry ? budgetEntry.amount : (cat.monthly_amount || 0);
+      
+      const porcentaje = presupuestado > 0 ? Math.min((gastado / presupuestado) * 100, 150) : 0;
+      
+      return {
+        name: cat.name.length > 12 ? cat.name.slice(0, 12) + '...' : cat.name,
+        fullName: cat.name,
+        gastado: parseFloat(gastado.toFixed(2)),
+        presupuestado: parseFloat(presupuestado.toFixed(2)),
+        porcentaje: parseFloat(porcentaje.toFixed(1)),
+        excedido: gastado > presupuestado && presupuestado > 0,
+      };
+    })
+    .filter(c => c.presupuestado > 0 || c.gastado > 0) // Solo mostrar si tiene presupuesto o gastos
+    .sort((a, b) => b.gastado - a.gastado)
+    .slice(0, 6); // Top 6 categorías variables
+  };
+
+  const variableExpensesData = getVariableExpensesData();
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 text-gray-900">
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 md:py-10">
@@ -3827,23 +3870,42 @@ const ExpenseTrackerApp = () => {
             <div className="h-64"><ResponsiveContainer width="100%" height="100%"><LineChart data={monthlyData}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="month" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" height={60} /><YAxis /><Tooltip formatter={(value) => [`€${value.toFixed(2)}`, '']} /><Line type="monotone" dataKey="total" stroke="#8b5cf6" strokeWidth={3} dot={{ r: 4 }} /></LineChart></ResponsiveContainer></div>
           </div>
           <div className="bg-white rounded-2xl shadow-lg p-6 border border-blue-100">
-            <h3 className="font-bold mb-4 text-gray-800">🏪 Top 5 Comercios del Mes</h3>
-            <div className="h-64">
-              {merchantData.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={merchantData} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
-                    <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `€${v}`} />
-                    <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={90} />
-                    <Tooltip 
-                      formatter={(value, name, props) => [`€${value.toFixed(2)} (${props.payload.count} compras)`, 'Total']} 
-                    />
-                    <Bar dataKey="value" fill="#ec4899" radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+            <h3 className="font-bold mb-4 text-gray-800">📊 Gastos Variables vs Presupuesto</h3>
+            <div className="h-64 overflow-y-auto">
+              {variableExpensesData.length > 0 ? (
+                <div className="space-y-3">
+                  {variableExpensesData.map((cat, idx) => (
+                    <div key={idx} className="space-y-1">
+                      <div className="flex justify-between text-sm">
+                        <span className="font-medium text-gray-700" title={cat.fullName}>{cat.name}</span>
+                        <span className={`font-semibold ${cat.excedido ? 'text-red-600' : 'text-gray-600'}`}>
+                          €{cat.gastado.toLocaleString('es-ES')} / €{cat.presupuestado.toLocaleString('es-ES')}
+                        </span>
+                      </div>
+                      <div className="relative h-4 bg-gray-200 rounded-full overflow-hidden">
+                        <div 
+                          className={`absolute h-full rounded-full transition-all ${
+                            cat.porcentaje > 100 ? 'bg-red-500' : 
+                            cat.porcentaje > 80 ? 'bg-yellow-500' : 'bg-green-500'
+                          }`}
+                          style={{ width: `${Math.min(cat.porcentaje, 100)}%` }}
+                        />
+                        {cat.porcentaje > 100 && (
+                          <div 
+                            className="absolute h-full bg-red-300 opacity-50"
+                            style={{ left: '100%', width: `${Math.min(cat.porcentaje - 100, 50)}%` }}
+                          />
+                        )}
+                      </div>
+                      <div className="text-xs text-right text-gray-500">
+                        {cat.porcentaje.toFixed(0)}% {cat.excedido && '⚠️'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               ) : (
                 <div className="h-full flex items-center justify-center text-gray-400">
-                  No hay gastos este mes
+                  Configurá tu presupuesto para ver el progreso
                 </div>
               )}
             </div>
