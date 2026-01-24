@@ -1112,7 +1112,7 @@ const ExpenseTrackerApp = () => {
     } catch { return false; }
   };
 
-  // Obtener precio de Yahoo Finance
+  // Obtener precio de Yahoo Finance usando proxy CORS
   const fetchStockPrice = async (ticker, exchange) => {
     try {
       // Construir el símbolo de Yahoo Finance
@@ -1130,27 +1130,29 @@ const ExpenseTrackerApp = () => {
         }
       }
       
-      // Usar un proxy CORS o API alternativa
-      const response = await fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1d&range=1d`,
-        { headers: { 'User-Agent': 'Mozilla/5.0' } }
-      );
+      // Usar proxy CORS para evitar bloqueo
+      const proxyUrl = 'https://corsproxy.io/?';
+      const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1d&range=1d`;
       
-      if (!response.ok) {
-        // Intentar API alternativa
-        const altResponse = await fetch(
-          `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${yahooTicker}&apikey=demo`
-        );
-        const altData = await altResponse.json();
-        if (altData['Global Quote']?.['05. price']) {
-          return parseFloat(altData['Global Quote']['05. price']);
-        }
-        return null;
+      const response = await fetch(proxyUrl + encodeURIComponent(yahooUrl));
+      
+      if (response.ok) {
+        const data = await response.json();
+        const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
+        if (price) return price;
       }
       
-      const data = await response.json();
-      const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
-      return price || null;
+      // Fallback: Intentar con otro proxy
+      const altProxyUrl = 'https://api.allorigins.win/raw?url=';
+      const altResponse = await fetch(altProxyUrl + encodeURIComponent(yahooUrl));
+      
+      if (altResponse.ok) {
+        const altData = await altResponse.json();
+        const price = altData?.chart?.result?.[0]?.meta?.regularMarketPrice;
+        if (price) return price;
+      }
+      
+      return null;
     } catch (e) {
       console.error(`Error fetching price for ${ticker}:`, e);
       return null;
@@ -3055,13 +3057,16 @@ const ExpenseTrackerApp = () => {
                   <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600" />
                 </button>
                 <div>
-                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-                    Inversiones 📈
+                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
+                    Inversiones 💹
                   </h1>
                   <p className="text-gray-600 mt-1 text-sm sm:text-base">Control de tu portafolio</p>
                 </div>
               </div>
-              <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-2 sm:gap-3">
+              <div className="grid grid-cols-4 sm:flex sm:flex-wrap gap-2 sm:gap-3">
+                <button onClick={() => setCurrentPage('expenses')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base">
+                  <DollarSign className="w-4 h-4" />Gastos
+                </button>
                 <button onClick={() => setCurrentPage('saldo')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base">
                   <Wallet className="w-4 h-4" />Saldo
                 </button>
@@ -3090,10 +3095,10 @@ const ExpenseTrackerApp = () => {
               <div><p className="text-gray-600 text-xs font-medium">Ganancia Realizada</p><p className={`text-lg sm:text-xl font-bold mt-1 ${realizedGains >= 0 ? 'text-green-600' : 'text-red-600'}`}>{realizedGains >= 0 ? '+' : ''}€{realizedGains.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
             </div>
             <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-5 border border-emerald-100">
-              <div><p className="text-gray-600 text-xs font-medium">🏆 Mejor Posición</p><p className="text-lg sm:text-xl font-bold text-green-600 mt-1">{bestPosition?.ticker || '-'} {bestPosition ? `+${bestPosition.gainPct.toFixed(1)}%` : ''}</p></div>
+              <div><p className="text-gray-600 text-xs font-medium">🏆 Mejor Posición</p><p className={`text-lg sm:text-xl font-bold mt-1 ${bestPosition?.gainPct >= 0 ? 'text-green-600' : 'text-red-600'}`}>{activeInvestments.length > 0 ? `${bestPosition?.ticker} ${bestPosition?.gainPct >= 0 ? '+' : ''}${bestPosition?.gainPct.toFixed(1)}%` : '-'}</p></div>
             </div>
             <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-5 border border-red-100">
-              <div><p className="text-gray-600 text-xs font-medium">📉 Peor Posición</p><p className="text-lg sm:text-xl font-bold text-red-600 mt-1">{worstPosition?.ticker || '-'} {worstPosition ? `${worstPosition.gainPct.toFixed(1)}%` : ''}</p></div>
+              <div><p className="text-gray-600 text-xs font-medium">📉 Peor Posición</p><p className={`text-lg sm:text-xl font-bold mt-1 ${worstPosition?.gainPct >= 0 ? 'text-green-600' : 'text-red-600'}`}>{activeInvestments.length > 1 ? `${worstPosition?.ticker} ${worstPosition?.gainPct >= 0 ? '+' : ''}${worstPosition?.gainPct.toFixed(1)}%` : (activeInvestments.length === 1 ? 'Solo 1 posición' : '-')}</p></div>
             </div>
           </div>
 
