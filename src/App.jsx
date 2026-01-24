@@ -15,8 +15,9 @@ import {
   Pie,
   Legend,
   ComposedChart,
+  ReferenceLine,
 } from 'recharts';
-import { Upload, DollarSign, User, Filter, Edit2, Plus, Save, X, Trash2, ListChecks, LogOut, CreditCard, Calendar, ArrowLeft, Wallet, TrendingUp, PiggyBank, Building, Target, Copy, AlertTriangle, TrendingDown, Percent } from 'lucide-react';
+import { Upload, DollarSign, User, Filter, Edit2, Plus, Save, X, Trash2, ListChecks, LogOut, CreditCard, Calendar, ArrowLeft, Wallet, TrendingUp, PiggyBank, Building, Target, Copy, AlertTriangle, TrendingDown, Percent, RefreshCw, BarChart3, Clock } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 // =====================================================
@@ -65,10 +66,33 @@ const DEFAULT_CATEGORIES = {
 
 const DEFAULT_PAYMENT_METHODS = ['Klarna', 'Scalapay', 'Aplázame', 'Caixa', 'Paypal', 'Revolut', 'Bizum'];
 const ACCOUNT_TYPES = ['cuenta', 'inversion', 'prestamo'];
-const CURRENCIES = ['EUR', 'USD', 'AUD'];
+const CURRENCIES = ['EUR', 'USD', 'AUD', 'GBP', 'TWD'];
 const INCOME_TYPES = ['salario', 'rendimiento', 'devolucion', 'otro'];
 const COLORS = ['#8b5cf6', '#ec4899', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#14b8a6', '#f97316'];
 const ALLOWED_EMAILS = ['nicogaveglio@gmail.com', 'constanzabetelu@gmail.com'];
+
+// Exchanges disponibles para inversiones
+const EXCHANGES = ['NASDAQ', 'NYSE', 'AMS', 'XETRA', 'LON', 'TPE', 'BME', 'MIL'];
+
+// Mapeo de tickers a Yahoo Finance
+const TICKER_YAHOO_MAP = {
+  // US stocks (sin sufijo)
+  'META': 'META', 'GOOG': 'GOOG', 'GOOGL': 'GOOGL', 'MSFT': 'MSFT',
+  'AMZN': 'AMZN', 'NVDA': 'NVDA', 'AAPL': 'AAPL', 'TSLA': 'TSLA',
+  // European
+  'ASML': 'ASML.AS',  // Amsterdam
+  'SXR8': 'SXR8.DE',  // Alemania (ETF S&P500)
+  // UK
+  'ZEG': 'ZEG.L',     // Londres
+  // Taiwan
+  '2330': '2330.TW',  // TSMC
+};
+
+// Colores para categorías de inversión
+const INVESTMENT_CATEGORY_COLORS = [
+  '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', 
+  '#3b82f6', '#ec4899', '#14b8a6', '#f97316', '#6366f1'
+];
 
 // =====================================================
 // COMPONENTE PRINCIPAL
@@ -165,6 +189,43 @@ const ExpenseTrackerApp = () => {
   const [showPaymentMethodModal, setShowPaymentMethodModal] = useState(false);
   const [newPaymentMethod, setNewPaymentMethod] = useState('');
   const [selectedBudgetMonth, setSelectedBudgetMonth] = useState(new Date().toISOString().slice(0, 7));
+
+  // Estados para página de Inversiones
+  const [investments, setInvestments] = useState([]);
+  const [investmentTransactions, setInvestmentTransactions] = useState([]);
+  const [investmentCategories, setInvestmentCategories] = useState([]);
+  const [portfolioSnapshots, setPortfolioSnapshots] = useState([]);
+  const [showInvestmentModal, setShowInvestmentModal] = useState(false);
+  const [editingInvestment, setEditingInvestment] = useState(null);
+  const [investmentForm, setInvestmentForm] = useState({
+    ticker: '',
+    name: '',
+    exchange: 'NASDAQ',
+    currency: 'USD',
+    category_id: '',
+    person: 'Nicolás',
+    date: new Date().toISOString().slice(0, 10),
+    quantity: '',
+    price: '',
+    commission: '0',
+  });
+  const [showTransactionModal, setShowTransactionModal] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState(null);
+  const [transactionForm, setTransactionForm] = useState({
+    investment_id: '',
+    date: new Date().toISOString().slice(0, 10),
+    type: 'buy',
+    quantity: '',
+    price: '',
+    commission: '0',
+    notes: '',
+  });
+  const [showInvestmentCategoryModal, setShowInvestmentCategoryModal] = useState(false);
+  const [newInvestmentCategory, setNewInvestmentCategory] = useState('');
+  const [lastPriceUpdate, setLastPriceUpdate] = useState(null);
+  const [updatingPrices, setUpdatingPrices] = useState(false);
+  const [exchangeRatesInv, setExchangeRatesInv] = useState({ USD: 1, EUR: 1, GBP: 1, TWD: 1, AUD: 1 });
+  const [showTransactionsTable, setShowTransactionsTable] = useState(false);
 
   // =====================================================
   // AUTENTICACIÓN
@@ -329,6 +390,38 @@ const ExpenseTrackerApp = () => {
           .eq('is_active', true);
         setSavingsGoals(savingsGoalsData || []);
 
+        // Cargar inversiones
+        const { data: investmentsData } = await supabase
+          .from('investments')
+          .select('*')
+          .eq('group_id', groupId)
+          .eq('is_active', true)
+          .order('ticker');
+        setInvestments(investmentsData || []);
+
+        // Cargar transacciones de inversiones
+        const { data: transactionsData } = await supabase
+          .from('investment_transactions')
+          .select('*')
+          .order('date', { ascending: false });
+        setInvestmentTransactions(transactionsData || []);
+
+        // Cargar categorías de inversión
+        const { data: invCategoriesData } = await supabase
+          .from('investment_categories')
+          .select('*')
+          .eq('group_id', groupId)
+          .order('sort_order');
+        setInvestmentCategories(invCategoriesData || []);
+
+        // Cargar snapshots del portafolio
+        const { data: snapshotsData } = await supabase
+          .from('portfolio_snapshots')
+          .select('*')
+          .eq('group_id', groupId)
+          .order('date', { ascending: true });
+        setPortfolioSnapshots(snapshotsData || []);
+
         // Cargar tasas de cambio (API gratuita)
         try {
           const ratesResponse = await fetch('https://api.exchangerate-api.com/v4/latest/EUR');
@@ -337,6 +430,13 @@ const ExpenseTrackerApp = () => {
             setExchangeRates({
               USD: 1 / ratesData.rates.USD,
               AUD: 1 / ratesData.rates.AUD,
+            });
+            setExchangeRatesInv({
+              USD: ratesData.rates.USD,
+              EUR: 1,
+              GBP: ratesData.rates.GBP,
+              TWD: ratesData.rates.TWD,
+              AUD: ratesData.rates.AUD,
             });
           }
         } catch (e) {
@@ -759,6 +859,405 @@ const ExpenseTrackerApp = () => {
       if (error) { alert(`Error: ${error.message}`); return false; }
       return true;
     } catch { return false; }
+  };
+
+  // =====================================================
+  // FUNCIONES CRUD INVERSIONES
+  // =====================================================
+  
+  // Guardar nueva inversión con primera transacción
+  const saveInvestmentToDb = async (formData) => {
+    if (!user || groupId === null) return null;
+    setSaving(true);
+    try {
+      const total = (parseFloat(formData.quantity) * parseFloat(formData.price)) + parseFloat(formData.commission || 0);
+      
+      // Crear inversión
+      const { data: investment, error: invError } = await supabase
+        .from('investments')
+        .insert([{
+          group_id: groupId,
+          ticker: formData.ticker.toUpperCase(),
+          name: formData.name || formData.ticker.toUpperCase(),
+          exchange: formData.exchange,
+          currency: formData.currency,
+          category_id: formData.category_id || null,
+          quantity: parseFloat(formData.quantity),
+          avg_purchase_price: parseFloat(formData.price),
+          total_invested: total,
+          person: formData.person,
+        }])
+        .select()
+        .single();
+      
+      if (invError) { alert(`Error: ${invError.message}`); return null; }
+      
+      // Crear primera transacción
+      const { data: transaction, error: txError } = await supabase
+        .from('investment_transactions')
+        .insert([{
+          investment_id: investment.id,
+          date: formData.date,
+          type: 'buy',
+          quantity: parseFloat(formData.quantity),
+          price: parseFloat(formData.price),
+          commission: parseFloat(formData.commission || 0),
+          total: total,
+        }])
+        .select()
+        .single();
+      
+      if (txError) console.error('Error creando transacción:', txError);
+      
+      if (transaction) {
+        setInvestmentTransactions([transaction, ...investmentTransactions]);
+      }
+      
+      return investment;
+    } catch (e) {
+      console.error(e);
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Actualizar inversión
+  const updateInvestmentInDb = async (id, updates) => {
+    if (!user || groupId === null) return null;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase
+        .from('investments')
+        .update({ ...updates, updated_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('group_id', groupId)
+        .select()
+        .single();
+      if (error) { alert(`Error: ${error.message}`); return null; }
+      return data;
+    } catch { return null; }
+    finally { setSaving(false); }
+  };
+
+  // Eliminar inversión
+  const deleteInvestmentFromDb = async (id) => {
+    if (!user || groupId === null) return false;
+    try {
+      const { error } = await supabase
+        .from('investments')
+        .update({ is_active: false })
+        .eq('id', id)
+        .eq('group_id', groupId);
+      if (error) { alert(`Error: ${error.message}`); return false; }
+      return true;
+    } catch { return false; }
+  };
+
+  // Agregar transacción (compra/venta)
+  const saveTransactionToDb = async (formData) => {
+    if (!user || groupId === null) return null;
+    setSaving(true);
+    try {
+      const total = (parseFloat(formData.quantity) * parseFloat(formData.price)) + parseFloat(formData.commission || 0);
+      
+      const { data: transaction, error } = await supabase
+        .from('investment_transactions')
+        .insert([{
+          investment_id: formData.investment_id,
+          date: formData.date,
+          type: formData.type,
+          quantity: parseFloat(formData.quantity),
+          price: parseFloat(formData.price),
+          commission: parseFloat(formData.commission || 0),
+          total: total,
+          notes: formData.notes,
+        }])
+        .select()
+        .single();
+      
+      if (error) { alert(`Error: ${error.message}`); return null; }
+      
+      // Recalcular la inversión
+      await recalculateInvestment(formData.investment_id);
+      
+      return transaction;
+    } catch (e) {
+      console.error(e);
+      return null;
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Actualizar transacción
+  const updateTransactionInDb = async (id, updates) => {
+    if (!user || groupId === null) return null;
+    setSaving(true);
+    try {
+      const total = (parseFloat(updates.quantity) * parseFloat(updates.price)) + parseFloat(updates.commission || 0);
+      
+      const { data, error } = await supabase
+        .from('investment_transactions')
+        .update({ 
+          ...updates, 
+          total: total,
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', id)
+        .select()
+        .single();
+      
+      if (error) { alert(`Error: ${error.message}`); return null; }
+      
+      // Recalcular la inversión
+      if (data.investment_id) {
+        await recalculateInvestment(data.investment_id);
+      }
+      
+      return data;
+    } catch { return null; }
+    finally { setSaving(false); }
+  };
+
+  // Eliminar transacción
+  const deleteTransactionFromDb = async (id, investmentId) => {
+    if (!user || groupId === null) return false;
+    try {
+      const { error } = await supabase
+        .from('investment_transactions')
+        .delete()
+        .eq('id', id);
+      if (error) { alert(`Error: ${error.message}`); return false; }
+      
+      // Recalcular la inversión
+      await recalculateInvestment(investmentId);
+      
+      return true;
+    } catch { return false; }
+  };
+
+  // Recalcular totales de una inversión basado en sus transacciones
+  const recalculateInvestment = async (investmentId) => {
+    try {
+      const { data: txs } = await supabase
+        .from('investment_transactions')
+        .select('*')
+        .eq('investment_id', investmentId)
+        .order('date');
+      
+      if (!txs || txs.length === 0) return;
+      
+      let totalQty = 0;
+      let totalCost = 0;
+      
+      txs.forEach(tx => {
+        if (tx.type === 'buy') {
+          totalQty += tx.quantity;
+          totalCost += tx.total;
+        } else if (tx.type === 'sell') {
+          totalQty -= tx.quantity;
+          totalCost -= (tx.quantity * (totalCost / (totalQty + tx.quantity)));
+        }
+      });
+      
+      const avgPrice = totalQty > 0 ? totalCost / totalQty : 0;
+      
+      await supabase
+        .from('investments')
+        .update({
+          quantity: totalQty,
+          avg_purchase_price: avgPrice,
+          total_invested: totalCost,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', investmentId);
+      
+      // Actualizar estado local
+      setInvestments(prev => prev.map(inv => 
+        inv.id === investmentId 
+          ? { ...inv, quantity: totalQty, avg_purchase_price: avgPrice, total_invested: totalCost }
+          : inv
+      ));
+      
+    } catch (e) {
+      console.error('Error recalculando inversión:', e);
+    }
+  };
+
+  // Guardar categoría de inversión
+  const saveInvestmentCategoryToDb = async (name) => {
+    if (!user || groupId === null || !name.trim()) return null;
+    setSaving(true);
+    try {
+      const color = INVESTMENT_CATEGORY_COLORS[investmentCategories.length % INVESTMENT_CATEGORY_COLORS.length];
+      const { data, error } = await supabase
+        .from('investment_categories')
+        .insert([{ group_id: groupId, name: name.trim(), color, sort_order: investmentCategories.length }])
+        .select()
+        .single();
+      if (error) { alert(`Error: ${error.message}`); return null; }
+      return data;
+    } catch { return null; }
+    finally { setSaving(false); }
+  };
+
+  // Eliminar categoría de inversión
+  const deleteInvestmentCategoryFromDb = async (id) => {
+    if (!user || groupId === null) return false;
+    try {
+      const { error } = await supabase.from('investment_categories').delete().eq('id', id).eq('group_id', groupId);
+      if (error) { alert(`Error: ${error.message}`); return false; }
+      return true;
+    } catch { return false; }
+  };
+
+  // Obtener precio de Yahoo Finance
+  const fetchStockPrice = async (ticker, exchange) => {
+    try {
+      // Construir el símbolo de Yahoo Finance
+      let yahooTicker = TICKER_YAHOO_MAP[ticker];
+      if (!yahooTicker) {
+        // Intentar construir basado en exchange
+        switch (exchange) {
+          case 'AMS': yahooTicker = `${ticker}.AS`; break;
+          case 'XETRA': yahooTicker = `${ticker}.DE`; break;
+          case 'LON': yahooTicker = `${ticker}.L`; break;
+          case 'TPE': yahooTicker = `${ticker}.TW`; break;
+          case 'BME': yahooTicker = `${ticker}.MC`; break;
+          case 'MIL': yahooTicker = `${ticker}.MI`; break;
+          default: yahooTicker = ticker;
+        }
+      }
+      
+      // Usar un proxy CORS o API alternativa
+      const response = await fetch(
+        `https://query1.finance.yahoo.com/v8/finance/chart/${yahooTicker}?interval=1d&range=1d`,
+        { headers: { 'User-Agent': 'Mozilla/5.0' } }
+      );
+      
+      if (!response.ok) {
+        // Intentar API alternativa
+        const altResponse = await fetch(
+          `https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${yahooTicker}&apikey=demo`
+        );
+        const altData = await altResponse.json();
+        if (altData['Global Quote']?.['05. price']) {
+          return parseFloat(altData['Global Quote']['05. price']);
+        }
+        return null;
+      }
+      
+      const data = await response.json();
+      const price = data?.chart?.result?.[0]?.meta?.regularMarketPrice;
+      return price || null;
+    } catch (e) {
+      console.error(`Error fetching price for ${ticker}:`, e);
+      return null;
+    }
+  };
+
+  // Actualizar precios de todas las inversiones
+  const updateAllPrices = async () => {
+    if (investments.length === 0) return;
+    setUpdatingPrices(true);
+    
+    try {
+      const updates = [];
+      
+      for (const inv of investments) {
+        const price = await fetchStockPrice(inv.ticker, inv.exchange);
+        if (price) {
+          const currentValue = inv.quantity * price;
+          updates.push({
+            id: inv.id,
+            current_price: price,
+            current_value: currentValue,
+            last_price_update: new Date().toISOString(),
+          });
+        }
+        // Pequeña pausa para no saturar la API
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+      
+      // Actualizar en la base de datos
+      for (const update of updates) {
+        await supabase
+          .from('investments')
+          .update({
+            current_price: update.current_price,
+            current_value: update.current_value,
+            last_price_update: update.last_price_update,
+          })
+          .eq('id', update.id);
+      }
+      
+      // Actualizar estado local
+      setInvestments(prev => prev.map(inv => {
+        const update = updates.find(u => u.id === inv.id);
+        return update ? { ...inv, ...update } : inv;
+      }));
+      
+      setLastPriceUpdate(new Date());
+      
+      // Guardar snapshot del día si no existe
+      await savePortfolioSnapshot();
+      
+    } catch (e) {
+      console.error('Error actualizando precios:', e);
+      alert('Error actualizando algunos precios. Los precios disponibles fueron actualizados.');
+    } finally {
+      setUpdatingPrices(false);
+    }
+  };
+
+  // Guardar snapshot del portafolio
+  const savePortfolioSnapshot = async () => {
+    if (!user || groupId === null) return;
+    
+    const today = new Date().toISOString().slice(0, 10);
+    const existingSnapshot = portfolioSnapshots.find(s => s.date === today);
+    if (existingSnapshot) return; // Ya existe snapshot de hoy
+    
+    const totalValue = investments.reduce((sum, inv) => {
+      const valueEur = convertToEur(inv.current_value || 0, inv.currency);
+      return sum + valueEur;
+    }, 0);
+    
+    const totalInvested = investments.reduce((sum, inv) => {
+      const investedEur = convertToEur(inv.total_invested, inv.currency);
+      return sum + investedEur;
+    }, 0);
+    
+    const lastSnapshot = portfolioSnapshots[portfolioSnapshots.length - 1];
+    const dailyChange = lastSnapshot ? totalValue - lastSnapshot.total_value : 0;
+    
+    try {
+      const { data } = await supabase
+        .from('portfolio_snapshots')
+        .insert([{
+          group_id: groupId,
+          date: today,
+          total_value: totalValue,
+          total_invested: totalInvested,
+          daily_change: dailyChange,
+        }])
+        .select()
+        .single();
+      
+      if (data) {
+        setPortfolioSnapshots([...portfolioSnapshots, data]);
+      }
+    } catch (e) {
+      console.error('Error guardando snapshot:', e);
+    }
+  };
+
+  // Convertir a EUR
+  const convertToEur = (amount, currency) => {
+    if (currency === 'EUR') return amount;
+    const rate = exchangeRatesInv[currency] || 1;
+    return amount / rate;
   };
 
   // =====================================================
@@ -1800,9 +2299,12 @@ const ExpenseTrackerApp = () => {
                   <p className="text-gray-600 mt-1 text-sm sm:text-base">Control de patrimonio familiar</p>
                 </div>
               </div>
-              <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-2 sm:gap-3">
+              <div className="grid grid-cols-4 sm:flex sm:flex-wrap gap-2 sm:gap-3">
                 <button onClick={() => setCurrentPage('presupuesto')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:shadow-lg font-semibold text-xs sm:text-base">
                   <Target className="w-4 h-4" /><span className="hidden sm:inline">Presupuesto</span><span className="sm:hidden">Presup.</span>
+                </button>
+                <button onClick={() => setCurrentPage('investments')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-green-100 text-green-700 rounded-xl hover:bg-green-200 font-medium text-xs sm:text-base">
+                  <TrendingUp className="w-4 h-4" /><span className="hidden sm:inline">Inversiones</span><span className="sm:hidden">Invers.</span>
                 </button>
                 <button onClick={() => setCurrentPage('installments')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base">
                   <CreditCard className="w-4 h-4" />Cuotas
@@ -2458,6 +2960,630 @@ const ExpenseTrackerApp = () => {
   }
 
   // =====================================================
+  // RENDER: INVERSIONES
+  // =====================================================
+  if (currentPage === 'investments') {
+    const activeInvestments = investments.filter(inv => inv.is_active && inv.quantity > 0);
+    
+    // Calcular totales
+    const calculateCurrentValue = (inv) => {
+      const price = inv.current_price || inv.avg_purchase_price;
+      const valueInCurrency = inv.quantity * price;
+      // Convertir a EUR
+      const rate = exchangeRatesInv[inv.currency] || 1;
+      return valueInCurrency * rate;
+    };
+    
+    const totalPortfolioValue = activeInvestments.reduce((sum, inv) => sum + calculateCurrentValue(inv), 0);
+    const totalInvested = activeInvestments.reduce((sum, inv) => {
+      const rate = exchangeRatesInv[inv.currency] || 1;
+      return sum + (inv.total_invested * rate);
+    }, 0);
+    const totalGain = totalPortfolioValue - totalInvested;
+    const totalGainPct = totalInvested > 0 ? (totalGain / totalInvested) * 100 : 0;
+    
+    // Calcular ganancias realizadas
+    const realizedGains = investmentTransactions
+      .filter(tx => tx.type === 'sell' && tx.realized_gain)
+      .reduce((sum, tx) => sum + tx.realized_gain, 0);
+    
+    // Mejor y peor posición
+    const positionsWithGain = activeInvestments.map(inv => {
+      const currentValue = calculateCurrentValue(inv);
+      const rate = exchangeRatesInv[inv.currency] || 1;
+      const invested = inv.total_invested * rate;
+      const gain = currentValue - invested;
+      const gainPct = invested > 0 ? (gain / invested) * 100 : 0;
+      return { ...inv, currentValue, invested, gain, gainPct };
+    });
+    
+    const sortedByGainPct = [...positionsWithGain].sort((a, b) => b.gainPct - a.gainPct);
+    const bestPosition = sortedByGainPct[0];
+    const worstPosition = sortedByGainPct[sortedByGainPct.length - 1];
+    
+    // Datos para gráficos
+    const rendimientoData = positionsWithGain
+      .sort((a, b) => b.gainPct - a.gainPct)
+      .map(inv => ({
+        ticker: inv.ticker,
+        rendimiento: parseFloat(inv.gainPct.toFixed(2)),
+        ganancia: parseFloat(inv.gain.toFixed(2)),
+        fill: inv.gainPct >= 0 ? '#10b981' : '#ef4444',
+      }));
+    
+    const distribucionData = positionsWithGain
+      .sort((a, b) => b.currentValue - a.currentValue)
+      .map(inv => ({
+        ticker: inv.ticker,
+        valor: parseFloat(inv.currentValue.toFixed(2)),
+        porcentaje: totalPortfolioValue > 0 ? parseFloat(((inv.currentValue / totalPortfolioValue) * 100).toFixed(1)) : 0,
+      }));
+    
+    // Distribución por categoría
+    const categoriaData = investmentCategories.map(cat => {
+      const categoryInvestments = positionsWithGain.filter(inv => inv.category_id === cat.id);
+      const valor = categoryInvestments.reduce((sum, inv) => sum + inv.currentValue, 0);
+      return {
+        name: cat.name,
+        valor: parseFloat(valor.toFixed(2)),
+        porcentaje: totalPortfolioValue > 0 ? parseFloat(((valor / totalPortfolioValue) * 100).toFixed(1)) : 0,
+        color: cat.color,
+      };
+    }).filter(c => c.valor > 0);
+    
+    // Sin categoría
+    const sinCategoriaValue = positionsWithGain
+      .filter(inv => !inv.category_id)
+      .reduce((sum, inv) => sum + inv.currentValue, 0);
+    if (sinCategoriaValue > 0) {
+      categoriaData.push({
+        name: 'Sin categoría',
+        valor: parseFloat(sinCategoriaValue.toFixed(2)),
+        porcentaje: parseFloat(((sinCategoriaValue / totalPortfolioValue) * 100).toFixed(1)),
+        color: '#9ca3af',
+      });
+    }
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 text-gray-900">
+        <div className="max-w-full mx-auto px-3 sm:px-4 py-4 md:py-10">
+          {/* Header */}
+          <header className="bg-white rounded-2xl sm:rounded-3xl shadow-xl p-4 sm:p-6 md:p-8 mb-6 md:mb-8 border border-purple-100">
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <button onClick={() => setCurrentPage('expenses')} className="p-2 hover:bg-gray-100 rounded-lg">
+                  <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600" />
+                </button>
+                <div>
+                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                    Inversiones 📈
+                  </h1>
+                  <p className="text-gray-600 mt-1 text-sm sm:text-base">Control de tu portafolio</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-2 sm:gap-3">
+                <button onClick={() => setCurrentPage('saldo')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base">
+                  <Wallet className="w-4 h-4" />Saldo
+                </button>
+                <button onClick={() => setCurrentPage('presupuesto')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base">
+                  <Target className="w-4 h-4" /><span className="hidden sm:inline">Presupuesto</span><span className="sm:hidden">Presup.</span>
+                </button>
+                <button onClick={handleLogout} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold text-xs sm:text-base">
+                  <LogOut className="w-4 h-4" />Salir
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {/* Stats Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 sm:gap-4 mb-6">
+            <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-5 border border-purple-100">
+              <div><p className="text-gray-600 text-xs font-medium">Valor Total</p><p className="text-lg sm:text-xl font-bold text-purple-600 mt-1">€{totalPortfolioValue.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-5 border border-blue-100">
+              <div><p className="text-gray-600 text-xs font-medium">Total Invertido</p><p className="text-lg sm:text-xl font-bold text-blue-600 mt-1">€{totalInvested.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-5 border border-green-100">
+              <div><p className="text-gray-600 text-xs font-medium">Rendimiento Total</p><p className={`text-lg sm:text-xl font-bold mt-1 ${totalGain >= 0 ? 'text-green-600' : 'text-red-600'}`}>{totalGain >= 0 ? '+' : ''}€{totalGain.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({totalGainPct.toFixed(1)}%)</p></div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-5 border border-yellow-100">
+              <div><p className="text-gray-600 text-xs font-medium">Ganancia Realizada</p><p className={`text-lg sm:text-xl font-bold mt-1 ${realizedGains >= 0 ? 'text-green-600' : 'text-red-600'}`}>{realizedGains >= 0 ? '+' : ''}€{realizedGains.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p></div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-5 border border-emerald-100">
+              <div><p className="text-gray-600 text-xs font-medium">🏆 Mejor Posición</p><p className="text-lg sm:text-xl font-bold text-green-600 mt-1">{bestPosition?.ticker || '-'} {bestPosition ? `+${bestPosition.gainPct.toFixed(1)}%` : ''}</p></div>
+            </div>
+            <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-5 border border-red-100">
+              <div><p className="text-gray-600 text-xs font-medium">📉 Peor Posición</p><p className="text-lg sm:text-xl font-bold text-red-600 mt-1">{worstPosition?.ticker || '-'} {worstPosition ? `${worstPosition.gainPct.toFixed(1)}%` : ''}</p></div>
+            </div>
+          </div>
+
+          {/* Última actualización y botones */}
+          <div className="bg-white rounded-2xl shadow-lg p-3 sm:p-4 mb-6 border border-purple-100 flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4 justify-between">
+            <div className="flex items-center gap-2 text-sm text-gray-500">
+              <Clock className="w-4 h-4" />
+              <span>Precios: {lastPriceUpdate ? new Date(lastPriceUpdate).toLocaleString('es-ES') : 'No actualizado'}</span>
+            </div>
+            <div className="grid grid-cols-2 sm:flex gap-2 sm:gap-3">
+              <button onClick={() => { setInvestmentForm({ ticker: '', name: '', exchange: 'NASDAQ', currency: 'USD', category_id: '', person: 'Nicolás', date: new Date().toISOString().slice(0, 10), quantity: '', price: '', commission: '0' }); setEditingInvestment(null); setShowInvestmentModal(true); }} className="flex items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg font-semibold text-xs sm:text-sm">
+                <Plus className="w-4 h-4" />Nueva Inversión
+              </button>
+              <button onClick={() => { setTransactionForm({ investment_id: activeInvestments[0]?.id || '', date: new Date().toISOString().slice(0, 10), type: 'buy', quantity: '', price: '', commission: '0', notes: '' }); setShowTransactionModal(true); }} className="flex items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 text-white hover:shadow-lg font-semibold text-xs sm:text-sm">
+                <Plus className="w-4 h-4" />Compra/Venta
+              </button>
+              <button onClick={() => setShowInvestmentCategoryModal(true)} className="flex items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl bg-purple-100 text-purple-700 hover:bg-purple-200 font-medium text-xs sm:text-sm">
+                <ListChecks className="w-4 h-4" />Categorías
+              </button>
+              <button onClick={updateAllPrices} disabled={updatingPrices} className="flex items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl bg-orange-100 text-orange-700 hover:bg-orange-200 font-medium text-xs sm:text-sm disabled:opacity-50">
+                <RefreshCw className={`w-4 h-4 ${updatingPrices ? 'animate-spin' : ''}`} />{updatingPrices ? 'Actualizando...' : 'Actualizar Precios'}
+              </button>
+            </div>
+          </div>
+
+          {/* Gráficos */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mb-6 sm:mb-8">
+            {/* Rendimiento por Posición */}
+            <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-6 border border-purple-100">
+              <h3 className="font-bold mb-4 text-gray-800 text-sm sm:text-base">Rendimiento por Posición (%)</h3>
+              <div className="h-64 sm:h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={rendimientoData} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                    <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `${v}%`} />
+                    <YAxis type="category" dataKey="ticker" tick={{ fontSize: 10 }} width={50} />
+                    <Tooltip formatter={(value, name) => [name === 'rendimiento' ? `${value}%` : `€${value}`, name === 'rendimiento' ? 'Rendimiento' : 'Ganancia']} />
+                    <ReferenceLine x={0} stroke="#666" />
+                    <Bar dataKey="rendimiento" radius={[0, 4, 4, 0]}>
+                      {rendimientoData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.fill} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Distribución del Portafolio */}
+            <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-6 border border-pink-100">
+              <h3 className="font-bold mb-4 text-gray-800 text-sm sm:text-base">Distribución del Portafolio</h3>
+              <div className="h-64 sm:h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={distribucionData} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                    <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `€${v.toLocaleString()}`} />
+                    <YAxis type="category" dataKey="ticker" tick={{ fontSize: 10 }} width={50} />
+                    <Tooltip formatter={(value, name) => [name === 'valor' ? `€${value.toLocaleString()}` : `${value}%`, name === 'valor' ? 'Valor' : 'Porcentaje']} />
+                    <Bar dataKey="valor" fill="#8b5cf6" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Evolución del Portafolio */}
+            <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-6 border border-blue-100">
+              <h3 className="font-bold mb-4 text-gray-800 text-sm sm:text-base">Evolución del Portafolio</h3>
+              <div className="h-64 sm:h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={portfolioSnapshots.slice(-30)}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={(v) => new Date(v).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })} />
+                    <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `€${(v/1000).toFixed(0)}k`} />
+                    <Tooltip formatter={(value) => [`€${value.toLocaleString('es-ES', { minimumFractionDigits: 2 })}`, '']} labelFormatter={(label) => new Date(label).toLocaleDateString('es-ES')} />
+                    <Legend />
+                    <Line type="monotone" dataKey="total_value" name="Valor Total" stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="total_invested" name="Total Invertido" stroke="#06b6d4" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            {/* Distribución por Categoría */}
+            <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-6 border border-green-100">
+              <h3 className="font-bold mb-4 text-gray-800 text-sm sm:text-base">Distribución por Categoría</h3>
+              <div className="h-64 sm:h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={categoriaData} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                    <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `€${v.toLocaleString()}`} />
+                    <YAxis type="category" dataKey="name" tick={{ fontSize: 10 }} width={100} />
+                    <Tooltip formatter={(value, name) => [name === 'valor' ? `€${value.toLocaleString()}` : `${value}%`, name === 'valor' ? 'Valor' : 'Porcentaje']} />
+                    <Bar dataKey="valor" radius={[0, 4, 4, 0]}>
+                      {categoriaData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+
+          {/* Tabla de Posiciones */}
+          <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-6 border border-purple-100 mb-6">
+            <h3 className="font-bold mb-4 text-gray-800 flex items-center gap-2"><BarChart3 className="w-5 h-5 text-purple-600" />Posiciones Activas</h3>
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead>
+                  <tr className="border-b border-gray-200">
+                    <th className="text-left py-3 px-2 text-xs font-semibold text-gray-600">Ticker</th>
+                    <th className="text-left py-3 px-2 text-xs font-semibold text-gray-600 hidden sm:table-cell">Exchange</th>
+                    <th className="text-right py-3 px-2 text-xs font-semibold text-gray-600">Cantidad</th>
+                    <th className="text-right py-3 px-2 text-xs font-semibold text-gray-600 hidden md:table-cell">P. Compra</th>
+                    <th className="text-right py-3 px-2 text-xs font-semibold text-gray-600">P. Actual</th>
+                    <th className="text-right py-3 px-2 text-xs font-semibold text-gray-600">Valor €</th>
+                    <th className="text-right py-3 px-2 text-xs font-semibold text-gray-600">Var %</th>
+                    <th className="text-right py-3 px-2 text-xs font-semibold text-gray-600 hidden lg:table-cell">Gan/Pér €</th>
+                    <th className="text-center py-3 px-2 text-xs font-semibold text-gray-600">Acción</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {positionsWithGain.map(inv => (
+                    <tr key={inv.id} className={`border-b border-gray-100 hover:bg-gray-50 ${inv.gainPct < 0 ? 'bg-red-50/30' : ''}`}>
+                      <td className="py-3 px-2">
+                        <div>
+                          <p className="font-semibold text-sm">{inv.ticker}</p>
+                          <p className="text-xs text-gray-500 truncate max-w-[100px]">{inv.name}</p>
+                        </div>
+                      </td>
+                      <td className="py-3 px-2 text-sm text-gray-600 hidden sm:table-cell">{inv.exchange}</td>
+                      <td className="py-3 px-2 text-right text-sm">{inv.quantity.toFixed(4)}</td>
+                      <td className="py-3 px-2 text-right text-sm hidden md:table-cell">{inv.currency === 'EUR' ? '€' : inv.currency === 'GBP' ? '£' : '$'}{inv.avg_purchase_price.toFixed(2)}</td>
+                      <td className="py-3 px-2 text-right text-sm">{inv.currency === 'EUR' ? '€' : inv.currency === 'GBP' ? '£' : '$'}{(inv.current_price || inv.avg_purchase_price).toFixed(2)}</td>
+                      <td className="py-3 px-2 text-right text-sm font-semibold">€{inv.currentValue.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td className={`py-3 px-2 text-right text-sm font-semibold ${inv.gainPct >= 0 ? 'text-green-600' : 'text-red-600'}`}>{inv.gainPct >= 0 ? '+' : ''}{inv.gainPct.toFixed(2)}%</td>
+                      <td className={`py-3 px-2 text-right text-sm font-semibold hidden lg:table-cell ${inv.gain >= 0 ? 'text-green-600' : 'text-red-600'}`}>{inv.gain >= 0 ? '+' : ''}€{inv.gain.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td className="py-3 px-2 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          <button onClick={() => { setEditingInvestment(inv); setInvestmentForm({ ticker: inv.ticker, name: inv.name, exchange: inv.exchange, currency: inv.currency, category_id: inv.category_id || '', person: inv.person, date: '', quantity: '', price: '', commission: '0' }); setShowInvestmentModal(true); }} className="p-1 text-purple-600 hover:bg-purple-100 rounded"><Edit2 className="w-4 h-4" /></button>
+                          <button onClick={async () => { if (confirm('¿Eliminar esta inversión?')) { const ok = await deleteInvestmentFromDb(inv.id); if (ok) setInvestments(investments.filter(i => i.id !== inv.id)); }}} className="p-1 text-red-600 hover:bg-red-100 rounded"><Trash2 className="w-4 h-4" /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-purple-50 font-bold">
+                    <td className="py-3 px-2 text-sm" colSpan={5}>TOTAL</td>
+                    <td className="py-3 px-2 text-right text-sm">€{totalPortfolioValue.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className={`py-3 px-2 text-right text-sm ${totalGainPct >= 0 ? 'text-green-600' : 'text-red-600'}`}>{totalGainPct >= 0 ? '+' : ''}{totalGainPct.toFixed(2)}%</td>
+                    <td className={`py-3 px-2 text-right text-sm hidden lg:table-cell ${totalGain >= 0 ? 'text-green-600' : 'text-red-600'}`}>{totalGain >= 0 ? '+' : ''}€{totalGain.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          {/* Tabla de Transacciones (colapsable) */}
+          <div className="bg-white rounded-2xl shadow-lg p-4 sm:p-6 border border-purple-100 mb-6">
+            <button onClick={() => setShowTransactionsTable(!showTransactionsTable)} className="w-full flex items-center justify-between font-bold text-gray-800">
+              <span className="flex items-center gap-2"><Calendar className="w-5 h-5 text-purple-600" />Historial de Transacciones</span>
+              <span className="text-purple-600">{showTransactionsTable ? '▲' : '▼'}</span>
+            </button>
+            {showTransactionsTable && (
+              <div className="mt-4 overflow-x-auto">
+                <table className="min-w-full">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="text-left py-3 px-2 text-xs font-semibold text-gray-600">Fecha</th>
+                      <th className="text-left py-3 px-2 text-xs font-semibold text-gray-600">Ticker</th>
+                      <th className="text-center py-3 px-2 text-xs font-semibold text-gray-600">Tipo</th>
+                      <th className="text-right py-3 px-2 text-xs font-semibold text-gray-600">Cantidad</th>
+                      <th className="text-right py-3 px-2 text-xs font-semibold text-gray-600">Precio</th>
+                      <th className="text-right py-3 px-2 text-xs font-semibold text-gray-600 hidden sm:table-cell">Comisión</th>
+                      <th className="text-right py-3 px-2 text-xs font-semibold text-gray-600">Total</th>
+                      <th className="text-right py-3 px-2 text-xs font-semibold text-gray-600 hidden md:table-cell">Gan/Pér</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {investmentTransactions.slice(0, 50).map(tx => {
+                      const inv = investments.find(i => i.id === tx.investment_id);
+                      return (
+                        <tr key={tx.id} className="border-b border-gray-100 hover:bg-gray-50">
+                          <td className="py-2 px-2 text-sm">{new Date(tx.date).toLocaleDateString('es-ES')}</td>
+                          <td className="py-2 px-2 text-sm font-medium">{inv?.ticker || '-'}</td>
+                          <td className="py-2 px-2 text-center">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${tx.type === 'buy' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                              {tx.type === 'buy' ? '🟢 Compra' : '🔴 Venta'}
+                            </span>
+                          </td>
+                          <td className="py-2 px-2 text-right text-sm">{tx.quantity.toFixed(4)}</td>
+                          <td className="py-2 px-2 text-right text-sm">€{tx.price.toFixed(2)}</td>
+                          <td className="py-2 px-2 text-right text-sm hidden sm:table-cell">€{tx.commission.toFixed(2)}</td>
+                          <td className="py-2 px-2 text-right text-sm font-medium">€{tx.total.toFixed(2)}</td>
+                          <td className={`py-2 px-2 text-right text-sm hidden md:table-cell ${tx.realized_gain ? (tx.realized_gain >= 0 ? 'text-green-600' : 'text-red-600') : ''}`}>
+                            {tx.realized_gain ? `${tx.realized_gain >= 0 ? '+' : ''}€${tx.realized_gain.toFixed(2)}` : '-'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {investmentTransactions.length === 0 && (
+                  <p className="text-center text-gray-500 py-4">No hay transacciones registradas</p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Modal Nueva/Editar Inversión */}
+          {showInvestmentModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-xl text-gray-800">{editingInvestment ? 'Editar Inversión' : 'Nueva Inversión'}</h3>
+                  <button onClick={() => setShowInvestmentModal(false)} className="text-gray-500 hover:text-gray-700"><X className="w-6 h-6" /></button>
+                </div>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Ticker *</label>
+                      <input type="text" placeholder="META" value={investmentForm.ticker} onChange={(e) => setInvestmentForm({ ...investmentForm, ticker: e.target.value.toUpperCase() })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" disabled={!!editingInvestment} />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Exchange *</label>
+                      <select value={investmentForm.exchange} onChange={(e) => setInvestmentForm({ ...investmentForm, exchange: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" disabled={!!editingInvestment}>
+                        {EXCHANGES.map(ex => <option key={ex} value={ex}>{ex}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Nombre</label>
+                    <input type="text" placeholder="Meta Platforms Inc" value={investmentForm.name} onChange={(e) => setInvestmentForm({ ...investmentForm, name: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Moneda *</label>
+                      <select value={investmentForm.currency} onChange={(e) => setInvestmentForm({ ...investmentForm, currency: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" disabled={!!editingInvestment}>
+                        {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
+                      <select value={investmentForm.category_id} onChange={(e) => setInvestmentForm({ ...investmentForm, category_id: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl">
+                        <option value="">Sin categoría</option>
+                        {investmentCategories.map(cat => <option key={cat.id} value={cat.id}>{cat.name}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Persona</label>
+                    <select value={investmentForm.person} onChange={(e) => setInvestmentForm({ ...investmentForm, person: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl">
+                      <option value="Nicolás">Nicolás</option>
+                      <option value="Connie">Connie</option>
+                      <option value="Ambos">Ambos</option>
+                    </select>
+                  </div>
+                  {!editingInvestment && (
+                    <>
+                      <hr className="my-4" />
+                      <p className="font-medium text-gray-700">Primera Compra</p>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Fecha *</label>
+                        <input type="date" value={investmentForm.date} onChange={(e) => setInvestmentForm({ ...investmentForm, date: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Cantidad *</label>
+                          <input type="number" step="0.0001" placeholder="1.5" value={investmentForm.quantity} onChange={(e) => setInvestmentForm({ ...investmentForm, quantity: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Precio *</label>
+                          <input type="number" step="0.01" placeholder="650.00" value={investmentForm.price} onChange={(e) => setInvestmentForm({ ...investmentForm, price: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Comisión</label>
+                        <input type="number" step="0.01" placeholder="1.00" value={investmentForm.commission} onChange={(e) => setInvestmentForm({ ...investmentForm, commission: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
+                      </div>
+                      {investmentForm.quantity && investmentForm.price && (
+                        <div className="bg-purple-50 p-3 rounded-xl">
+                          <p className="text-sm text-purple-700">
+                            <span className="font-semibold">Total: </span>
+                            €{((parseFloat(investmentForm.quantity) * parseFloat(investmentForm.price)) + parseFloat(investmentForm.commission || 0)).toLocaleString('es-ES', { minimumFractionDigits: 2 })}
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+                <div className="flex gap-3 mt-6">
+                  <button onClick={async () => {
+                    if (!investmentForm.ticker) { alert('Ingresa un ticker'); return; }
+                    if (editingInvestment) {
+                      const updated = await updateInvestmentInDb(editingInvestment.id, { 
+                        name: investmentForm.name, 
+                        category_id: investmentForm.category_id || null,
+                        person: investmentForm.person 
+                      });
+                      if (updated) { 
+                        setInvestments(investments.map(i => i.id === editingInvestment.id ? { ...i, ...updated } : i)); 
+                        setShowInvestmentModal(false); 
+                      }
+                    } else {
+                      if (!investmentForm.quantity || !investmentForm.price) { alert('Ingresa cantidad y precio'); return; }
+                      const saved = await saveInvestmentToDb(investmentForm);
+                      if (saved) { 
+                        setInvestments([...investments, saved]); 
+                        setShowInvestmentModal(false); 
+                      }
+                    }
+                  }} disabled={saving} className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg disabled:opacity-50">
+                    <Save className="w-5 h-5" />{saving ? 'Guardando...' : 'Guardar'}
+                  </button>
+                  <button onClick={() => setShowInvestmentModal(false)} className="px-6 py-3 rounded-xl font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300">Cancelar</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Compra/Venta */}
+          {showTransactionModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-xl text-gray-800">{transactionForm.type === 'buy' ? 'Registrar Compra' : 'Registrar Venta'}</h3>
+                  <button onClick={() => setShowTransactionModal(false)} className="text-gray-500 hover:text-gray-700"><X className="w-6 h-6" /></button>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Ticker *</label>
+                    <select value={transactionForm.investment_id} onChange={(e) => setTransactionForm({ ...transactionForm, investment_id: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl">
+                      <option value="">Seleccionar...</option>
+                      {activeInvestments.map(inv => <option key={inv.id} value={inv.id}>{inv.ticker} - {inv.name}</option>)}
+                    </select>
+                    {transactionForm.investment_id && (() => {
+                      const inv = investments.find(i => i.id === transactionForm.investment_id);
+                      if (!inv) return null;
+                      return (
+                        <div className="mt-2 p-2 bg-gray-50 rounded-lg text-sm">
+                          <p>Cantidad actual: <strong>{inv.quantity.toFixed(4)}</strong></p>
+                          <p>Precio actual: <strong>{inv.currency === 'EUR' ? '€' : '$'}{(inv.current_price || inv.avg_purchase_price).toFixed(2)}</strong></p>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Tipo de Operación *</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button type="button" onClick={() => setTransactionForm({ ...transactionForm, type: 'buy' })} className={`px-4 py-3 rounded-xl font-medium ${transactionForm.type === 'buy' ? 'bg-green-600 text-white' : 'bg-gray-100 text-gray-700'}`}>🟢 Compra</button>
+                      <button type="button" onClick={() => setTransactionForm({ ...transactionForm, type: 'sell' })} className={`px-4 py-3 rounded-xl font-medium ${transactionForm.type === 'sell' ? 'bg-red-600 text-white' : 'bg-gray-100 text-gray-700'}`}>🔴 Venta</button>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Fecha *</label>
+                    <input type="date" value={transactionForm.date} onChange={(e) => setTransactionForm({ ...transactionForm, date: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Cantidad *</label>
+                      <input type="number" step="0.0001" placeholder="1.5" value={transactionForm.quantity} onChange={(e) => setTransactionForm({ ...transactionForm, quantity: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Precio *</label>
+                      <input type="number" step="0.01" placeholder="650.00" value={transactionForm.price} onChange={(e) => setTransactionForm({ ...transactionForm, price: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Comisión</label>
+                    <input type="number" step="0.01" placeholder="1.00" value={transactionForm.commission} onChange={(e) => setTransactionForm({ ...transactionForm, commission: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Notas</label>
+                    <input type="text" placeholder="Opcional..." value={transactionForm.notes} onChange={(e) => setTransactionForm({ ...transactionForm, notes: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
+                  </div>
+                  {transactionForm.quantity && transactionForm.price && transactionForm.investment_id && (
+                    <div className={`p-4 rounded-xl ${transactionForm.type === 'buy' ? 'bg-green-50' : 'bg-red-50'}`}>
+                      <p className="text-sm font-medium mb-2">{transactionForm.type === 'buy' ? 'Resumen de Compra' : 'Resumen de Venta'}</p>
+                      <p className="text-sm">Total: <strong>€{((parseFloat(transactionForm.quantity) * parseFloat(transactionForm.price)) + parseFloat(transactionForm.commission || 0)).toLocaleString('es-ES', { minimumFractionDigits: 2 })}</strong></p>
+                      {transactionForm.type === 'sell' && (() => {
+                        const inv = investments.find(i => i.id === transactionForm.investment_id);
+                        if (!inv) return null;
+                        const sellTotal = parseFloat(transactionForm.quantity) * parseFloat(transactionForm.price) - parseFloat(transactionForm.commission || 0);
+                        const costBasis = parseFloat(transactionForm.quantity) * inv.avg_purchase_price;
+                        const gain = sellTotal - costBasis;
+                        const gainPct = costBasis > 0 ? (gain / costBasis) * 100 : 0;
+                        return (
+                          <>
+                            <p className="text-sm">Costo base: <strong>€{costBasis.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</strong></p>
+                            <p className={`text-sm font-bold ${gain >= 0 ? 'text-green-700' : 'text-red-700'}`}>
+                              Ganancia/Pérdida: {gain >= 0 ? '+' : ''}€{gain.toLocaleString('es-ES', { minimumFractionDigits: 2 })} ({gainPct.toFixed(1)}%)
+                            </p>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
+                </div>
+                <div className="flex gap-3 mt-6">
+                  <button onClick={async () => {
+                    if (!transactionForm.investment_id || !transactionForm.quantity || !transactionForm.price) { 
+                      alert('Completa todos los campos requeridos'); 
+                      return; 
+                    }
+                    const inv = investments.find(i => i.id === transactionForm.investment_id);
+                    if (transactionForm.type === 'sell' && parseFloat(transactionForm.quantity) > inv.quantity) {
+                      alert(`No puedes vender más de ${inv.quantity} unidades`);
+                      return;
+                    }
+                    
+                    // Calcular ganancia realizada para ventas
+                    let txData = { ...transactionForm };
+                    if (transactionForm.type === 'sell' && inv) {
+                      const sellTotal = parseFloat(transactionForm.quantity) * parseFloat(transactionForm.price) - parseFloat(transactionForm.commission || 0);
+                      const costBasis = parseFloat(transactionForm.quantity) * inv.avg_purchase_price;
+                      txData.cost_basis = inv.avg_purchase_price;
+                      txData.realized_gain = sellTotal - costBasis;
+                    }
+                    
+                    const saved = await saveTransactionToDb(txData);
+                    if (saved) { 
+                      setInvestmentTransactions([saved, ...investmentTransactions]); 
+                      // Recargar inversiones para ver los nuevos totales
+                      const { data } = await supabase.from('investments').select('*').eq('group_id', groupId).eq('is_active', true);
+                      if (data) setInvestments(data);
+                      setShowTransactionModal(false); 
+                    }
+                  }} disabled={saving} className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold text-white hover:shadow-lg disabled:opacity-50 ${transactionForm.type === 'buy' ? 'bg-gradient-to-r from-green-600 to-emerald-600' : 'bg-gradient-to-r from-red-600 to-pink-600'}`}>
+                    <Save className="w-5 h-5" />{saving ? 'Guardando...' : transactionForm.type === 'buy' ? 'Registrar Compra' : 'Registrar Venta'}
+                  </button>
+                  <button onClick={() => setShowTransactionModal(false)} className="px-6 py-3 rounded-xl font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300">Cancelar</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Categorías de Inversión */}
+          {showInvestmentCategoryModal && (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+              <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-bold text-xl text-gray-800">Categorías de Inversión</h3>
+                  <button onClick={() => setShowInvestmentCategoryModal(false)} className="text-gray-500 hover:text-gray-700"><X className="w-6 h-6" /></button>
+                </div>
+                <div className="space-y-4">
+                  <div className="flex gap-2">
+                    <input type="text" placeholder="Nueva categoría (ej: Tech, ETFs...)" value={newInvestmentCategory} onChange={(e) => setNewInvestmentCategory(e.target.value)} className="flex-1 px-4 py-3 border border-gray-300 rounded-xl" />
+                    <button onClick={async () => { 
+                      if (newInvestmentCategory.trim()) { 
+                        const saved = await saveInvestmentCategoryToDb(newInvestmentCategory); 
+                        if (saved) { 
+                          setInvestmentCategories([...investmentCategories, saved]); 
+                          setNewInvestmentCategory(''); 
+                        } 
+                      } 
+                    }} className="px-4 py-3 bg-purple-600 text-white rounded-xl hover:bg-purple-700"><Plus className="w-5 h-5" /></button>
+                  </div>
+                  <div className="border border-gray-200 rounded-xl max-h-60 overflow-y-auto">
+                    {investmentCategories.length === 0 ? (
+                      <p className="text-center text-gray-500 py-4">No hay categorías</p>
+                    ) : investmentCategories.map(cat => (
+                      <div key={cat.id} className="flex items-center justify-between px-4 py-3 border-b border-gray-100 last:border-b-0">
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full" style={{ backgroundColor: cat.color }}></div>
+                          <span>{cat.name}</span>
+                        </div>
+                        <button onClick={async () => { 
+                          if (confirm('¿Eliminar esta categoría?')) { 
+                            const ok = await deleteInvestmentCategoryFromDb(cat.id); 
+                            if (ok) setInvestmentCategories(investmentCategories.filter(c => c.id !== cat.id)); 
+                          } 
+                        }} className="text-red-500 hover:text-red-700"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex gap-3 mt-6">
+                  <button onClick={() => setShowInvestmentCategoryModal(false)} className="flex-1 px-6 py-3 rounded-xl font-semibold bg-purple-600 text-white hover:bg-purple-700">Listo</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // =====================================================
   // RENDER: GASTOS (Principal)
   // =====================================================
   const categoryData = getCategoryData();
@@ -2477,9 +3603,10 @@ const ExpenseTrackerApp = () => {
               <p className="text-xs text-gray-400 mt-1">{user.email}</p>
             </div>
             <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-2 sm:gap-3">
-              <button onClick={() => setCurrentPage('installments')} className="flex items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-sm sm:text-base"><CreditCard className="w-4 h-4" /><span className="hidden xs:inline">Cuotas</span><span className="xs:hidden">Cuotas</span></button>
+              <button onClick={() => setCurrentPage('installments')} className="flex items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-sm sm:text-base"><CreditCard className="w-4 h-4" />Cuotas</button>
               <button onClick={() => setCurrentPage('saldo')} className="flex items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl hover:shadow-lg font-semibold text-sm sm:text-base"><Wallet className="w-4 h-4" />Saldo</button>
               <button onClick={() => setCurrentPage('presupuesto')} className="flex items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-sm sm:text-base"><Target className="w-4 h-4" /><span className="hidden sm:inline">Presupuesto</span><span className="sm:hidden">Presup.</span></button>
+              <button onClick={() => setCurrentPage('investments')} className="flex items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 bg-green-100 text-green-700 rounded-xl hover:bg-green-200 font-medium text-sm sm:text-base"><TrendingUp className="w-4 h-4" /><span className="hidden sm:inline">Inversiones</span><span className="sm:hidden">Invers.</span></button>
               <button onClick={handleLogout} className="flex items-center justify-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold text-sm sm:text-base"><LogOut className="w-4 h-4" />Salir</button>
             </div>
           </div>
