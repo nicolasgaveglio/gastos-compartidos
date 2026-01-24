@@ -61,6 +61,7 @@ const DEFAULT_CATEGORIES = {
   Recuerdos: ['souvenir', 'recuerdo', 'regalo'],
   'Alquiler de coches': ['rent a car', 'alquiler coche', 'hertz', 'avis', 'europcar'],
   Psicóloga: ['psicologa', 'psicologo', 'terapia', 'psicoterapia'],
+  'Cuotas': ['klarna', 'scalapay', 'aplazame', 'aplázame', 'paypal credit', 'sequra', 'cetelem', 'cofidis', 'pepper'],
   Otro: [],
 };
 
@@ -92,6 +93,18 @@ const TICKER_YAHOO_MAP = {
 const INVESTMENT_CATEGORY_COLORS = [
   '#8b5cf6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', 
   '#3b82f6', '#ec4899', '#14b8a6', '#f97316', '#6366f1'
+];
+
+// Categorías de inversión por defecto
+const DEFAULT_INVESTMENT_CATEGORIES = [
+  { name: 'Tech', color: '#8b5cf6' },
+  { name: 'Semiconductores', color: '#06b6d4' },
+  { name: 'ETFs', color: '#10b981' },
+  { name: 'Financiero', color: '#f59e0b' },
+  { name: 'Salud', color: '#ef4444' },
+  { name: 'Energía', color: '#3b82f6' },
+  { name: 'Consumo', color: '#ec4899' },
+  { name: 'Cripto', color: '#f97316' },
 ];
 
 // =====================================================
@@ -412,7 +425,23 @@ const ExpenseTrackerApp = () => {
           .select('*')
           .eq('group_id', groupId)
           .order('sort_order');
-        setInvestmentCategories(invCategoriesData || []);
+        
+        // Si no hay categorías, crear las por defecto
+        if (!invCategoriesData || invCategoriesData.length === 0) {
+          const defaultCats = DEFAULT_INVESTMENT_CATEGORIES.map((cat, idx) => ({
+            group_id: groupId,
+            name: cat.name,
+            color: cat.color,
+            sort_order: idx,
+          }));
+          const { data: newCats } = await supabase
+            .from('investment_categories')
+            .insert(defaultCats)
+            .select();
+          setInvestmentCategories(newCats || []);
+        } else {
+          setInvestmentCategories(invCategoriesData);
+        }
 
         // Cargar snapshots del portafolio
         const { data: snapshotsData } = await supabase
@@ -1667,9 +1696,12 @@ const ExpenseTrackerApp = () => {
   };
 
   const getInstallmentForMonth = (installment, monthKey) => {
-    const startDate = new Date(installment.start_month);
-    const checkDate = new Date(monthKey + '-01');
-    const monthsDiff = (checkDate.getFullYear() - startDate.getFullYear()) * 12 + (checkDate.getMonth() - startDate.getMonth());
+    // Usar solo año y mes para evitar problemas de timezone
+    const startYearMonth = installment.start_month.slice(0, 7); // "2025-12"
+    const [startYear, startMonth] = startYearMonth.split('-').map(Number);
+    const [checkYear, checkMonth] = monthKey.split('-').map(Number);
+    
+    const monthsDiff = (checkYear - startYear) * 12 + (checkMonth - startMonth);
     if (monthsDiff >= 0 && monthsDiff < installment.total_installments) {
       return { amount: installment.installment_amount, number: monthsDiff + 1, total: installment.total_installments };
     }
@@ -1688,13 +1720,20 @@ const ExpenseTrackerApp = () => {
 
   const getTotalPendingInstallments = () => {
     const currentMonth = new Date().toISOString().slice(0, 7);
+    const [currentYear, currentMonthNum] = currentMonth.split('-').map(Number);
     const filtered = getFilteredInstallments();
     let total = 0;
     filtered.forEach(inst => {
-      const startDate = new Date(inst.start_month);
-      const endDate = new Date(startDate.getFullYear(), startDate.getMonth() + inst.total_installments - 1, 1);
-      for (let d = new Date(Math.max(startDate.getTime(), new Date(currentMonth + '-01').getTime())); d <= endDate; d.setMonth(d.getMonth() + 1)) {
-        total += inst.installment_amount;
+      const startYearMonth = inst.start_month.slice(0, 7);
+      const [startYear, startMonth] = startYearMonth.split('-').map(Number);
+      
+      for (let i = 0; i < inst.total_installments; i++) {
+        const instYear = startYear + Math.floor((startMonth - 1 + i) / 12);
+        const instMonth = ((startMonth - 1 + i) % 12) + 1;
+        // Solo contar desde el mes actual en adelante
+        if (instYear > currentYear || (instYear === currentYear && instMonth >= currentMonthNum)) {
+          total += inst.installment_amount;
+        }
       }
     });
     return total;
@@ -2090,13 +2129,19 @@ const ExpenseTrackerApp = () => {
                 </div>
               </div>
               <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-2 sm:gap-3">
+                <button onClick={() => setCurrentPage('expenses')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base">
+                  <DollarSign className="w-4 h-4" />Gastos
+                </button>
                 <button onClick={() => setCurrentPage('saldo')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base">
                   <Wallet className="w-4 h-4" />Saldo
                 </button>
                 <button onClick={() => setCurrentPage('presupuesto')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base">
                   <Target className="w-4 h-4" /><span className="hidden sm:inline">Presupuesto</span><span className="sm:hidden">Presup.</span>
                 </button>
-                <button onClick={handleLogout} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold text-xs sm:text-base">
+                <button onClick={() => setCurrentPage('investments')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base">
+                  <TrendingUp className="w-4 h-4" /><span className="hidden sm:inline">Inversiones</span><span className="sm:hidden">Invers.</span>
+                </button>
+                <button onClick={handleLogout} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold text-xs sm:text-base col-span-3 sm:col-span-1">
                   <LogOut className="w-4 h-4" />Salir
                 </button>
               </div>
@@ -2301,17 +2346,20 @@ const ExpenseTrackerApp = () => {
                   <p className="text-gray-600 mt-1 text-sm sm:text-base">Control de patrimonio familiar</p>
                 </div>
               </div>
-              <div className="grid grid-cols-4 sm:flex sm:flex-wrap gap-2 sm:gap-3">
-                <button onClick={() => setCurrentPage('presupuesto')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-xl hover:shadow-lg font-semibold text-xs sm:text-base">
+              <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-2 sm:gap-3">
+                <button onClick={() => setCurrentPage('expenses')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base">
+                  <DollarSign className="w-4 h-4" />Gastos
+                </button>
+                <button onClick={() => setCurrentPage('presupuesto')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base">
                   <Target className="w-4 h-4" /><span className="hidden sm:inline">Presupuesto</span><span className="sm:hidden">Presup.</span>
                 </button>
-                <button onClick={() => setCurrentPage('investments')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-green-100 text-green-700 rounded-xl hover:bg-green-200 font-medium text-xs sm:text-base">
+                <button onClick={() => setCurrentPage('investments')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base">
                   <TrendingUp className="w-4 h-4" /><span className="hidden sm:inline">Inversiones</span><span className="sm:hidden">Invers.</span>
                 </button>
                 <button onClick={() => setCurrentPage('installments')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base">
                   <CreditCard className="w-4 h-4" />Cuotas
                 </button>
-                <button onClick={handleLogout} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold text-xs sm:text-base">
+                <button onClick={handleLogout} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold text-xs sm:text-base col-span-3 sm:col-span-1">
                   <LogOut className="w-4 h-4" />Salir
                 </button>
               </div>
@@ -2738,9 +2786,11 @@ const ExpenseTrackerApp = () => {
                 </div>
               </div>
               <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-2 sm:gap-3">
+                <button onClick={() => setCurrentPage('expenses')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base"><DollarSign className="w-4 h-4" />Gastos</button>
                 <button onClick={() => setCurrentPage('saldo')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base"><Wallet className="w-4 h-4" />Saldo</button>
+                <button onClick={() => setCurrentPage('investments')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base"><TrendingUp className="w-4 h-4" /><span className="hidden sm:inline">Inversiones</span><span className="sm:hidden">Invers.</span></button>
                 <button onClick={() => setCurrentPage('installments')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base"><CreditCard className="w-4 h-4" />Cuotas</button>
-                <button onClick={handleLogout} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold text-xs sm:text-base"><LogOut className="w-4 h-4" />Salir</button>
+                <button onClick={handleLogout} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold text-xs sm:text-base col-span-3 sm:col-span-1"><LogOut className="w-4 h-4" />Salir</button>
               </div>
             </div>
           </header>
@@ -2895,11 +2945,23 @@ const ExpenseTrackerApp = () => {
                         </tr>
                       );
                     })}
+                    {cuotasDelMes > 0 && (
+                      <tr className="border-b border-gray-200 bg-blue-50/50">
+                        <td className="p-3 font-medium text-blue-700">📅 Cuotas del Mes</td>
+                        <td className="p-3 text-right"><span className="text-gray-400">-</span></td>
+                        <td className="p-3 text-right font-semibold text-blue-600">€{cuotasDelMes.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</td>
+                        <td className="p-3 text-right font-semibold text-blue-600">-€{cuotasDelMes.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</td>
+                        <td className="p-3 text-center"><span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-700">Fijo</span></td>
+                        <td className="p-3 text-center">
+                          <button onClick={() => setCurrentPage('installments')} className="p-1.5 text-blue-600 hover:bg-blue-100 rounded text-xs">Ver →</button>
+                        </td>
+                      </tr>
+                    )}
                     <tr className="border-t-2 border-purple-200 bg-purple-50 font-bold">
                       <td className="p-3 text-purple-700">TOTAL</td>
                       <td className="p-3 text-right text-purple-700">€{totalPresupuestado.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</td>
-                      <td className="p-3 text-right text-purple-700">€{totalGastado.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</td>
-                      <td className={`p-3 text-right font-bold ${(totalPresupuestado - totalGastado) >= 0 ? 'text-green-600' : 'text-red-600'}`}>{(totalPresupuestado - totalGastado) >= 0 ? '+' : ''}€{(totalPresupuestado - totalGastado).toLocaleString('es-ES', { minimumFractionDigits: 2 })}</td>
+                      <td className="p-3 text-right text-purple-700">€{totalConCuotas.toLocaleString('es-ES', { minimumFractionDigits: 2 })}</td>
+                      <td className={`p-3 text-right font-bold ${(totalPresupuestado - totalConCuotas) >= 0 ? 'text-green-600' : 'text-red-600'}`}>{(totalPresupuestado - totalConCuotas) >= 0 ? '+' : ''}€{(totalPresupuestado - totalConCuotas).toLocaleString('es-ES', { minimumFractionDigits: 2 })}</td>
                       <td></td>
                       <td></td>
                     </tr>
@@ -2934,8 +2996,33 @@ const ExpenseTrackerApp = () => {
                   <button onClick={async () => {
                     if (!budgetCategoryForm.name) { alert('Ingresa un nombre'); return; }
                     if (editingBudgetCategory) {
+                      // Actualizar categoría
                       const updated = await updateBudgetCategoryInDb(editingBudgetCategory.id, { name: budgetCategoryForm.name, monthly_amount: parseFloat(budgetCategoryForm.monthly_amount) || 0 });
-                      if (updated) { setBudgetCategories(budgetCategories.map(c => c.id === editingBudgetCategory.id ? updated : c)); setShowBudgetCategoryModal(false); }
+                      if (updated) { 
+                        setBudgetCategories(budgetCategories.map(c => c.id === editingBudgetCategory.id ? updated : c)); 
+                        // También actualizar/crear el budget_monthly para el mes seleccionado
+                        const existingMonthly = budgetMonthly.find(m => m.category_id === editingBudgetCategory.id && m.month === selectedBudgetMonth);
+                        if (existingMonthly) {
+                          // Actualizar existente
+                          const { data: updatedMonthly } = await supabase
+                            .from('budget_monthly')
+                            .update({ amount: parseFloat(budgetCategoryForm.monthly_amount) || 0 })
+                            .eq('id', existingMonthly.id)
+                            .select()
+                            .single();
+                          if (updatedMonthly) {
+                            setBudgetMonthly(budgetMonthly.map(m => m.id === existingMonthly.id ? updatedMonthly : m));
+                          }
+                        } else if (parseFloat(budgetCategoryForm.monthly_amount) > 0) {
+                          // Crear nuevo
+                          const monthlyData = await saveBudgetMonthlyToDb(editingBudgetCategory.id, selectedBudgetMonth, budgetCategoryForm.monthly_amount);
+                          if (monthlyData) {
+                            setBudgetMonthly([...budgetMonthly, monthlyData]);
+                          }
+                        }
+                        setShowBudgetCategoryModal(false); 
+                        setEditingBudgetCategory(null);
+                      }
                     } else {
                       const saved = await saveBudgetCategoryToDb(budgetCategoryForm);
                       if (saved) { 
@@ -3057,13 +3144,13 @@ const ExpenseTrackerApp = () => {
                   <ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600" />
                 </button>
                 <div>
-                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
-                    Inversiones 💹
+                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
+                    Inversiones 📊
                   </h1>
                   <p className="text-gray-600 mt-1 text-sm sm:text-base">Control de tu portafolio</p>
                 </div>
               </div>
-              <div className="grid grid-cols-4 sm:flex sm:flex-wrap gap-2 sm:gap-3">
+              <div className="grid grid-cols-3 sm:flex sm:flex-wrap gap-2 sm:gap-3">
                 <button onClick={() => setCurrentPage('expenses')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base">
                   <DollarSign className="w-4 h-4" />Gastos
                 </button>
@@ -3073,7 +3160,10 @@ const ExpenseTrackerApp = () => {
                 <button onClick={() => setCurrentPage('presupuesto')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base">
                   <Target className="w-4 h-4" /><span className="hidden sm:inline">Presupuesto</span><span className="sm:hidden">Presup.</span>
                 </button>
-                <button onClick={handleLogout} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold text-xs sm:text-base">
+                <button onClick={() => setCurrentPage('installments')} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium text-xs sm:text-base">
+                  <CreditCard className="w-4 h-4" />Cuotas
+                </button>
+                <button onClick={handleLogout} className="flex items-center justify-center gap-1 sm:gap-2 px-2 sm:px-4 py-2 bg-red-500 text-white rounded-xl hover:bg-red-600 font-semibold text-xs sm:text-base col-span-3 sm:col-span-1">
                   <LogOut className="w-4 h-4" />Salir
                 </button>
               </div>
@@ -3238,7 +3328,7 @@ const ExpenseTrackerApp = () => {
                       <td className={`py-3 px-2 text-right text-sm font-semibold hidden lg:table-cell ${inv.gain >= 0 ? 'text-green-600' : 'text-red-600'}`}>{inv.gain >= 0 ? '+' : ''}€{inv.gain.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       <td className="py-3 px-2 text-center">
                         <div className="flex items-center justify-center gap-1">
-                          <button onClick={() => { setEditingInvestment(inv); setInvestmentForm({ ticker: inv.ticker, name: inv.name, exchange: inv.exchange, currency: inv.currency, category_id: inv.category_id || '', person: inv.person, date: '', quantity: '', price: '', commission: '0' }); setShowInvestmentModal(true); }} className="p-1 text-purple-600 hover:bg-purple-100 rounded"><Edit2 className="w-4 h-4" /></button>
+                          <button onClick={() => { setEditingInvestment(inv); setInvestmentForm({ ticker: inv.ticker, name: inv.name, exchange: inv.exchange, currency: inv.currency, category_id: inv.category_id || '', person: inv.person, date: '', quantity: '', price: '', commission: '0', current_price: '' }); setShowInvestmentModal(true); }} className="p-1 text-purple-600 hover:bg-purple-100 rounded"><Edit2 className="w-4 h-4" /></button>
                           <button onClick={async () => { if (confirm('¿Eliminar esta inversión?')) { const ok = await deleteInvestmentFromDb(inv.id); if (ok) setInvestments(investments.filter(i => i.id !== inv.id)); }}} className="p-1 text-red-600 hover:bg-red-100 rounded"><Trash2 className="w-4 h-4" /></button>
                         </div>
                       </td>
@@ -3326,7 +3416,7 @@ const ExpenseTrackerApp = () => {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Exchange *</label>
-                      <select value={investmentForm.exchange} onChange={(e) => setInvestmentForm({ ...investmentForm, exchange: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" disabled={!!editingInvestment}>
+                      <select value={investmentForm.exchange} onChange={(e) => setInvestmentForm({ ...investmentForm, exchange: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl">
                         {EXCHANGES.map(ex => <option key={ex} value={ex}>{ex}</option>)}
                       </select>
                     </div>
@@ -3338,7 +3428,7 @@ const ExpenseTrackerApp = () => {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Moneda *</label>
-                      <select value={investmentForm.currency} onChange={(e) => setInvestmentForm({ ...investmentForm, currency: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" disabled={!!editingInvestment}>
+                      <select value={investmentForm.currency} onChange={(e) => setInvestmentForm({ ...investmentForm, currency: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl">
                         {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
                     </div>
@@ -3358,6 +3448,17 @@ const ExpenseTrackerApp = () => {
                       <option value="Ambos">Ambos</option>
                     </select>
                   </div>
+                  {editingInvestment && (
+                    <>
+                      <hr className="my-4" />
+                      <p className="font-medium text-gray-700">Actualizar Precio Actual</p>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Precio Actual (manual)</label>
+                        <input type="number" step="0.01" placeholder={editingInvestment.current_price || editingInvestment.avg_purchase_price} value={investmentForm.current_price || ''} onChange={(e) => setInvestmentForm({ ...investmentForm, current_price: e.target.value })} className="w-full px-4 py-3 border border-gray-300 rounded-xl" />
+                        <p className="text-xs text-gray-500 mt-1">Dejá vacío para mantener el precio actual</p>
+                      </div>
+                    </>
+                  )}
                   {!editingInvestment && (
                     <>
                       <hr className="my-4" />
@@ -3395,11 +3496,20 @@ const ExpenseTrackerApp = () => {
                   <button onClick={async () => {
                     if (!investmentForm.ticker) { alert('Ingresa un ticker'); return; }
                     if (editingInvestment) {
-                      const updated = await updateInvestmentInDb(editingInvestment.id, { 
+                      const updates = { 
                         name: investmentForm.name, 
+                        exchange: investmentForm.exchange,
+                        currency: investmentForm.currency,
                         category_id: investmentForm.category_id || null,
                         person: investmentForm.person 
-                      });
+                      };
+                      // Si se ingresó precio manual, actualizarlo
+                      if (investmentForm.current_price) {
+                        updates.current_price = parseFloat(investmentForm.current_price);
+                        updates.current_value = editingInvestment.quantity * parseFloat(investmentForm.current_price);
+                        updates.last_price_update = new Date().toISOString();
+                      }
+                      const updated = await updateInvestmentInDb(editingInvestment.id, updates);
                       if (updated) { 
                         setInvestments(investments.map(i => i.id === editingInvestment.id ? { ...i, ...updated } : i)); 
                         setShowInvestmentModal(false); 
