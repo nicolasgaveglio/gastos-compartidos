@@ -581,7 +581,7 @@ const ExpenseTrackerApp = () => {
           total_amount: parseFloat(installment.total_amount),
           total_installments: parseInt(installment.total_installments),
           installment_amount: parseFloat(installment.total_amount) / parseInt(installment.total_installments),
-          start_month: installment.start_month + '-01',
+          start_month: installment.start_month + '-15',
           person: installment.person,
         }])
         .select()
@@ -605,7 +605,7 @@ const ExpenseTrackerApp = () => {
           total_amount: parseFloat(updates.total_amount),
           total_installments: parseInt(updates.total_installments),
           installment_amount: parseFloat(updates.total_amount) / parseInt(updates.total_installments),
-          start_month: updates.start_month + '-01',
+          start_month: updates.start_month + '-15',
           person: updates.person,
           updated_at: new Date().toISOString(),
         })
@@ -1944,11 +1944,12 @@ const ExpenseTrackerApp = () => {
 
   // Obtener presupuesto de una categoría para un mes (solo si está cargado explícitamente)
   const getBudgetAmountForCategory = (categoryId, monthKey) => {
-    const monthStr = monthKey + '-01';
-    const budget = budgetMonthly.find(b => b.category_id === categoryId && b.month === monthStr);
+    // monthKey es "2026-01", comparamos solo los primeros 7 caracteres
+    const budget = budgetMonthly.find(b => b.category_id === categoryId && b.month && b.month.slice(0, 7) === monthKey);
     if (budget) return budget.amount;
-    // NO usar monto por defecto - solo mostrar si está cargado
-    return 0;
+    // Si no hay dato específico para este mes, usar el monto default de la categoría
+    const cat = budgetCategories.find(c => c.id === categoryId);
+    return cat?.monthly_amount || 0;
   };
 
   // Obtener total presupuestado para un mes
@@ -2124,7 +2125,7 @@ const ExpenseTrackerApp = () => {
               <div className="flex items-center gap-3 sm:gap-4">
                 <button onClick={() => setCurrentPage('expenses')} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600" /></button>
                 <div>
-                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Cuotas 📅</h1>
+                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Cuotas</h1>
                   <p className="text-gray-600 mt-1 text-sm sm:text-base">Gestión de pagos en cuotas</p>
                 </div>
               </div>
@@ -2342,7 +2343,7 @@ const ExpenseTrackerApp = () => {
               <div className="flex items-center gap-3 sm:gap-4">
                 <button onClick={() => setCurrentPage('expenses')} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600" /></button>
                 <div>
-                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Saldo 💰</h1>
+                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Saldo</h1>
                   <p className="text-gray-600 mt-1 text-sm sm:text-base">Control de patrimonio familiar</p>
                 </div>
               </div>
@@ -2781,7 +2782,7 @@ const ExpenseTrackerApp = () => {
               <div className="flex items-center gap-3 sm:gap-4">
                 <button onClick={() => setCurrentPage('saldo')} className="p-2 hover:bg-gray-100 rounded-lg"><ArrowLeft className="w-5 h-5 sm:w-6 sm:h-6 text-gray-600" /></button>
                 <div>
-                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Presupuesto 📋</h1>
+                  <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Presupuesto</h1>
                   <p className="text-gray-600 mt-1 text-sm sm:text-base">Proyección y control de gastos</p>
                 </div>
               </div>
@@ -3086,12 +3087,35 @@ const ExpenseTrackerApp = () => {
       return { ...inv, currentValue, invested, gain, gainPct };
     });
     
-    const sortedByGainPct = [...positionsWithGain].sort((a, b) => b.gainPct - a.gainPct);
+    // Agrupar por ticker (sumar valores, promediar rendimientos)
+    const groupedByTicker = positionsWithGain.reduce((acc, inv) => {
+      if (!acc[inv.ticker]) {
+        acc[inv.ticker] = { 
+          ticker: inv.ticker, 
+          currentValue: 0, 
+          invested: 0, 
+          gain: 0,
+          count: 0 
+        };
+      }
+      acc[inv.ticker].currentValue += inv.currentValue;
+      acc[inv.ticker].invested += inv.invested;
+      acc[inv.ticker].gain += inv.gain;
+      acc[inv.ticker].count += 1;
+      return acc;
+    }, {});
+    
+    const aggregatedPositions = Object.values(groupedByTicker).map(g => ({
+      ...g,
+      gainPct: g.invested > 0 ? (g.gain / g.invested) * 100 : 0,
+    }));
+    
+    const sortedByGainPct = [...aggregatedPositions].sort((a, b) => b.gainPct - a.gainPct);
     const bestPosition = sortedByGainPct[0];
     const worstPosition = sortedByGainPct[sortedByGainPct.length - 1];
     
-    // Datos para gráficos
-    const rendimientoData = positionsWithGain
+    // Datos para gráficos (usando datos agrupados)
+    const rendimientoData = aggregatedPositions
       .sort((a, b) => b.gainPct - a.gainPct)
       .map(inv => ({
         ticker: inv.ticker,
@@ -3100,7 +3124,7 @@ const ExpenseTrackerApp = () => {
         fill: inv.gainPct >= 0 ? '#10b981' : '#ef4444',
       }));
     
-    const distribucionData = positionsWithGain
+    const distribucionData = aggregatedPositions
       .sort((a, b) => b.currentValue - a.currentValue)
       .map(inv => ({
         ticker: inv.ticker,
@@ -3145,7 +3169,7 @@ const ExpenseTrackerApp = () => {
                 </button>
                 <div>
                   <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">
-                    Inversiones 📊
+                    Inversiones
                   </h1>
                   <p className="text-gray-600 mt-1 text-sm sm:text-base">Control de tu portafolio</p>
                 </div>
@@ -3707,13 +3731,58 @@ const ExpenseTrackerApp = () => {
   const totalExpenses = getTotalExpenses();
   const filteredExpenses = getFilteredExpenses();
 
+  // Calcular ranking de comercios (top 5 del mes actual)
+  const getMerchantRanking = () => {
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const thisMonthExpenses = expenses.filter(exp => {
+      const parts = exp.date.split('/');
+      if (parts.length === 3) {
+        const expMonth = `${parts[2]}-${parts[1].padStart(2, '0')}`;
+        return expMonth === currentMonth;
+      }
+      return false;
+    });
+    
+    // Agrupar por concepto/comercio (limpiar el nombre)
+    const merchantTotals = thisMonthExpenses.reduce((acc, exp) => {
+      // Limpiar el nombre del comercio (quitar números de tarjeta, ciudades comunes, etc.)
+      let merchant = exp.concept || 'Sin concepto';
+      merchant = merchant
+        .replace(/\s+(barcelona|madrid|spain|es|esp)\s*/gi, ' ')
+        .replace(/\s*:\*\d+\s*/g, ' ')
+        .replace(/\s*tarj\.\s*/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      
+      // Capitalizar primera letra de cada palabra
+      merchant = merchant.split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+        .join(' ')
+        .slice(0, 25); // Limitar longitud
+      
+      if (!acc[merchant]) {
+        acc[merchant] = { name: merchant, total: 0, count: 0 };
+      }
+      acc[merchant].total += Number(exp.amount);
+      acc[merchant].count += 1;
+      return acc;
+    }, {});
+    
+    return Object.values(merchantTotals)
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5)
+      .map(m => ({ name: m.name, value: parseFloat(m.total.toFixed(2)), count: m.count }));
+  };
+  
+  const merchantData = getMerchantRanking();
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-pink-50 to-blue-50 text-gray-900">
       <div className="max-w-7xl mx-auto px-3 sm:px-4 py-4 md:py-10">
         <header className="bg-white rounded-2xl sm:rounded-3xl shadow-xl p-4 sm:p-6 md:p-8 mb-6 md:mb-8 border border-purple-100">
           <div className="flex flex-col gap-4">
             <div>
-              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Gastos de Nicolás & Connie 💑</h1>
+              <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Gastos de Nicolás & Connie</h1>
               <p className="text-gray-600 mt-1 text-sm sm:text-base">Gestión inteligente de finanzas familiares</p>
               <p className="text-xs text-gray-400 mt-1">{user.email}</p>
             </div>
@@ -3758,8 +3827,26 @@ const ExpenseTrackerApp = () => {
             <div className="h-64"><ResponsiveContainer width="100%" height="100%"><LineChart data={monthlyData}><CartesianGrid strokeDasharray="3 3" vertical={false} /><XAxis dataKey="month" tick={{ fontSize: 10 }} angle={-20} textAnchor="end" height={60} /><YAxis /><Tooltip formatter={(value) => [`€${value.toFixed(2)}`, '']} /><Line type="monotone" dataKey="total" stroke="#8b5cf6" strokeWidth={3} dot={{ r: 4 }} /></LineChart></ResponsiveContainer></div>
           </div>
           <div className="bg-white rounded-2xl shadow-lg p-6 border border-blue-100">
-            <h3 className="font-bold mb-4 text-gray-800">Gastos por Persona</h3>
-            <div className="h-64"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie dataKey="value" data={personData} cx="50%" cy="50%" outerRadius={80} label={({ name, value }) => `${name}: €${value}`}>{personData.map((entry, index) => <Cell key={entry.name} fill={COLORS[index % COLORS.length]} />)}</Pie><Tooltip formatter={(value) => [`€${value.toFixed(2)}`, '']} /></PieChart></ResponsiveContainer></div>
+            <h3 className="font-bold mb-4 text-gray-800">🏪 Top 5 Comercios del Mes</h3>
+            <div className="h-64">
+              {merchantData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={merchantData} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} />
+                    <XAxis type="number" tick={{ fontSize: 10 }} tickFormatter={(v) => `€${v}`} />
+                    <YAxis type="category" dataKey="name" tick={{ fontSize: 9 }} width={90} />
+                    <Tooltip 
+                      formatter={(value, name, props) => [`€${value.toFixed(2)} (${props.payload.count} compras)`, 'Total']} 
+                    />
+                    <Bar dataKey="value" fill="#ec4899" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-gray-400">
+                  No hay gastos este mes
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
