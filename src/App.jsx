@@ -117,6 +117,9 @@ const ExpenseTrackerApp = () => {
   const [isInitialized, setIsInitialized] = useState(false);
   const [expenses, setExpenses] = useState([]);
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
+  const [learnedKeywords, setLearnedKeywords] = useState([]);
+  const [showLearnKeywordModal, setShowLearnKeywordModal] = useState(false);
+  const [pendingKeywordLearn, setPendingKeywordLearn] = useState(null); // { concept, category, expenseId }
   const [installments, setInstallments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -348,6 +351,13 @@ const ExpenseTrackerApp = () => {
         if (categoriesData?.categories) {
           setCategories({ ...DEFAULT_CATEGORIES, ...categoriesData.categories });
         }
+
+        // Cargar keywords aprendidas
+        const { data: learnedData } = await supabase
+          .from('learned_keywords')
+          .select('*')
+          .eq('group_id', groupId);
+        setLearnedKeywords(learnedData || []);
 
         // Cargar datos de presupuesto
         const { data: accountsData } = await supabase
@@ -1296,6 +1306,15 @@ const ExpenseTrackerApp = () => {
   // =====================================================
   const categorizeExpense = useCallback((concept) => {
     const conceptLower = concept.toLowerCase();
+    
+    // Primero buscar en keywords aprendidas (tienen prioridad)
+    for (const learned of learnedKeywords) {
+      if (conceptLower.includes(learned.keyword.toLowerCase())) {
+        return learned.category;
+      }
+    }
+    
+    // Luego buscar en categorías default
     for (const [category, keywords] of Object.entries(categories)) {
       if (category === 'Otro') continue;
       for (const keyword of keywords) {
@@ -1303,7 +1322,7 @@ const ExpenseTrackerApp = () => {
       }
     }
     return 'Otro';
-  }, [categories]);
+  }, [categories, learnedKeywords]);
 
   const getPersonFromUser = useCallback(() => {
     const email = user?.email?.toLowerCase() || '';
@@ -1311,6 +1330,85 @@ const ExpenseTrackerApp = () => {
     if (email.includes('nicogaveglio')) return 'Nicolás';
     return 'Nicolás';
   }, [user]);
+
+  // Extraer keyword principal de un concepto (primeras palabras significativas)
+  const extractKeyword = (concept) => {
+    // Limpiar el concepto
+    let cleaned = concept.toLowerCase()
+      .replace(/tarj\.\s*\*+\d+/gi, '')
+      .replace(/\*+\d+/g, '')
+      .replace(/barcelona|madrid|spain|es|esp|stockholm|luxembourg/gi, '')
+      .replace(/[0-9]{2}\/[0-9]{2}\/[0-9]{4}/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    // Tomar las primeras 2-3 palabras significativas
+    const words = cleaned.split(' ').filter(w => w.length > 2);
+    return words.slice(0, 2).join(' ').trim();
+  };
+
+  // Guardar keyword aprendida
+  const saveLearnedKeyword = async (keyword, category) => {
+    if (!user || groupId === null) return;
+    
+    // Verificar que no exista ya
+    const exists = learnedKeywords.some(lk => lk.keyword.toLowerCase() === keyword.toLowerCase());
+    if (exists) return;
+    
+    const { data, error } = await supabase
+      .from('learned_keywords')
+      .insert([{ group_id: groupId, keyword: keyword.toLowerCase(), category }])
+      .select()
+      .single();
+    
+    if (!error && data) {
+      setLearnedKeywords([...learnedKeywords, data]);
+    }
+  };
+
+  // Manejar categorización manual con aprendizaje
+  const handleCategoryChange = async (expenseId, newCategory, concept) => {
+    // Actualizar el gasto
+    const { error } = await supabase
+      .from('expenses')
+      .update({ category: newCategory })
+      .eq('id', expenseId);
+    
+    if (error) {
+      alert('Error actualizando categoría');
+      return;
+    }
+    
+    setExpenses(expenses.map(e => e.id === expenseId ? { ...e, category: newCategory } : e));
+    setEditingId(null);
+    
+    // Verificar si debemos aprender esta keyword
+    const keyword = extractKeyword(concept);
+    if (keyword && keyword.length >= 3 && newCategory !== 'Otro') {
+      // Verificar que no sea una keyword que ya conocemos
+      const alreadyKnown = learnedKeywords.some(lk => 
+        keyword.toLowerCase().includes(lk.keyword.toLowerCase()) ||
+        lk.keyword.toLowerCase().includes(keyword.toLowerCase())
+      );
+      
+      const defaultKnown = Object.values(categories).flat().some(kw => 
+        keyword.toLowerCase().includes(kw.toLowerCase())
+      );
+      
+      if (!alreadyKnown && !defaultKnown) {
+        setPendingKeywordLearn({ keyword, category: newCategory, expenseId });
+        setShowLearnKeywordModal(true);
+      }
+    }
+  };
+
+  const confirmLearnKeyword = async () => {
+    if (pendingKeywordLearn) {
+      await saveLearnedKeyword(pendingKeywordLearn.keyword, pendingKeywordLearn.category);
+    }
+    setShowLearnKeywordModal(false);
+    setPendingKeywordLearn(null);
+  };
 
   // =====================================================
   // PARSER EXCEL
@@ -1443,11 +1541,36 @@ const ExpenseTrackerApp = () => {
         return;
       }
 
-      const existingKeys = new Set(expenses.map(e => `${e.date}-${e.concept}-${e.amount}`));
-      const uniqueNew = newExpenses.filter(e => !existingKeys.has(`${e.date}-${e.concept}-${e.amount}`));
+      // Detección de duplicados mejorada (Opción B - flexible)
+      const isDuplicate = (newExp) => {
+        return expenses.some(existing => {
+          // Mismo monto
+          if (Math.abs(existing.amount - newExp.amount) > 0.01) return false;
+          
+          // Misma fecha
+          if (existing.date !== newExp.date) return false;
+          
+          // Concepto similar (primeras 10-15 letras)
+          const existingConcept = existing.concept.toLowerCase().slice(0, 15);
+          const newConcept = newExp.concept.toLowerCase().slice(0, 15);
+          
+          // Si coinciden las primeras 10 letras, es duplicado
+          if (existingConcept.slice(0, 10) === newConcept.slice(0, 10)) return true;
+          
+          // Si contiene palabras clave similares
+          const existingWords = existing.concept.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+          const newWords = newExp.concept.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+          const commonWords = existingWords.filter(w => newWords.some(nw => nw.includes(w) || w.includes(nw)));
+          
+          return commonWords.length >= 2;
+        });
+      };
+      
+      const uniqueNew = newExpenses.filter(e => !isDuplicate(e));
+      const duplicatesCount = newExpenses.length - uniqueNew.length;
 
       if (uniqueNew.length === 0) {
-        alert('Todos los gastos del archivo ya existen');
+        alert(`Todos los ${newExpenses.length} gastos del archivo ya existen (duplicados omitidos)`);
         setUploading(false);
         return;
       }
@@ -1467,7 +1590,8 @@ const ExpenseTrackerApp = () => {
       });
 
       setExpenses(updatedExpenses);
-      alert(`✅ ${uniqueNew.length} nuevos gastos añadidos (${bankType})`);
+      const dupeMsg = duplicatesCount > 0 ? ` (${duplicatesCount} duplicados omitidos)` : '';
+      alert(`✅ ${uniqueNew.length} nuevos gastos añadidos (${bankType})${dupeMsg}`);
 
     } catch (error) {
       console.error('Error:', error);
@@ -1477,9 +1601,221 @@ const ExpenseTrackerApp = () => {
     }
   };
 
+  // =====================================================
+  // PARSER PDF (Revolut)
+  // =====================================================
+  const parsePDF = async (file) => {
+    if (!user || groupId === null) { alert('Error: Debes estar logueado'); return; }
+    setUploading(true);
+    
+    try {
+      const pdfjsLib = await import('pdfjs-dist');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      
+      let fullText = '';
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i);
+        const textContent = await page.getTextContent();
+        const pageText = textContent.items.map(item => item.str).join(' ');
+        fullText += pageText + '\n';
+      }
+      
+      // Detectar tipo de banco
+      let bankType = 'UNKNOWN';
+      let detectedPerson = null;
+      
+      if (fullText.includes('Revolut Bank UAB') || fullText.includes('Revolut')) {
+        bankType = 'REVOLUT';
+        // Detectar persona por nombre en el PDF
+        if (fullText.toUpperCase().includes('CONSTANZA') || fullText.toUpperCase().includes('BETELU')) {
+          detectedPerson = 'Connie';
+        } else if (fullText.toUpperCase().includes('NICOLAS') || fullText.toUpperCase().includes('NICOL')) {
+          detectedPerson = 'Nicolás';
+        }
+      }
+      
+      if (bankType === 'UNKNOWN') {
+        alert('Formato de PDF no reconocido. Solo se soporta Revolut por ahora.');
+        setUploading(false);
+        return;
+      }
+      
+      const person = detectedPerson || getPersonFromUser();
+      const newExpenses = [];
+      
+      if (bankType === 'REVOLUT') {
+        // Parser para Revolut PDF
+        // Buscar transacciones con el patrón: fecha, descripción, monto
+        // Formato típico: "31 ene 2026" o "1 feb 2026"
+        
+        const lines = fullText.split(/\s{2,}|\n/);
+        
+        // Regex para fechas en formato "31 ene 2026" o "1 feb 2026"
+        const dateRegex = /^(\d{1,2})\s+(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\s+(\d{4})$/i;
+        const monthMap = {
+          'ene': '01', 'feb': '02', 'mar': '03', 'abr': '04', 'may': '05', 'jun': '06',
+          'jul': '07', 'ago': '08', 'sep': '09', 'oct': '10', 'nov': '11', 'dic': '12'
+        };
+        
+        // Conceptos a ignorar
+        const ignoreKeywords = ['redondeo en revpoints', 'depósito de apple pay', 'transferencia recibida', 'dinero entrante'];
+        
+        // Buscar patrón en el texto completo usando regex más robusto
+        // Patrón: fecha transacción | fecha valor | descripción | dinero saliente | dinero entrante | saldo
+        const transactionRegex = /(\d{1,2}\s+(?:ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\s+\d{4})\s+\d{1,2}\s+(?:ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\s+\d{4}\s+([A-Za-z][^€]*?)\s+€([\d.,]+)\s+€[\d.,]+/gi;
+        
+        let match;
+        while ((match = transactionRegex.exec(fullText)) !== null) {
+          const dateStr = match[1];
+          const concept = match[2].trim();
+          const amountStr = match[3];
+          
+          // Ignorar conceptos específicos
+          if (ignoreKeywords.some(kw => concept.toLowerCase().includes(kw))) continue;
+          
+          // Parsear fecha
+          const dateParts = dateStr.match(/(\d{1,2})\s+(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\s+(\d{4})/i);
+          if (!dateParts) continue;
+          
+          const day = dateParts[1].padStart(2, '0');
+          const month = monthMap[dateParts[2].toLowerCase()];
+          const year = dateParts[3];
+          const formattedDate = `${day}/${month}/${year}`;
+          
+          // Parsear monto
+          let amount = parseFloat(amountStr.replace('.', '').replace(',', '.'));
+          if (isNaN(amount) || amount <= 0) continue;
+          
+          // Limpiar concepto
+          let cleanConcept = concept
+            .replace(/Tarjeta:\s*\d+\*+\d+/gi, '')
+            .replace(/A\s+[A-Za-z\s]+,\s*[A-Za-z\s]+$/i, '')
+            .replace(/De\s+[A-Za-z\*\s]+,\s*[A-Za-z\s]+$/i, '')
+            .trim();
+          
+          if (cleanConcept.length < 3) cleanConcept = concept;
+          
+          newExpenses.push({
+            date: formattedDate,
+            concept: cleanConcept,
+            amount,
+            category: categorizeExpense(cleanConcept),
+            person
+          });
+        }
+        
+        // Si el regex principal no encontró nada, intentar método alternativo línea por línea
+        if (newExpenses.length === 0) {
+          const allText = fullText.replace(/\n/g, ' ');
+          // Buscar montos con € precedidos de texto
+          const simpleRegex = /(\d{1,2}\s+(?:ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\s+\d{4})[^€]+?([A-Za-z][A-Za-z\s\.\*\-]+?)\s+€([\d.,]+)/gi;
+          
+          while ((match = simpleRegex.exec(allText)) !== null) {
+            const dateStr = match[1];
+            let concept = match[2].trim();
+            const amountStr = match[3];
+            
+            if (ignoreKeywords.some(kw => concept.toLowerCase().includes(kw))) continue;
+            if (concept.toLowerCase().includes('dinero entrante')) continue;
+            
+            const dateParts = dateStr.match(/(\d{1,2})\s+(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)\s+(\d{4})/i);
+            if (!dateParts) continue;
+            
+            const day = dateParts[1].padStart(2, '0');
+            const month = monthMap[dateParts[2].toLowerCase()];
+            const year = dateParts[3];
+            const formattedDate = `${day}/${month}/${year}`;
+            
+            let amount = parseFloat(amountStr.replace('.', '').replace(',', '.'));
+            if (isNaN(amount) || amount <= 0) continue;
+            
+            newExpenses.push({
+              date: formattedDate,
+              concept,
+              amount,
+              category: categorizeExpense(concept),
+              person
+            });
+          }
+        }
+      }
+      
+      if (newExpenses.length === 0) {
+        alert(`No se encontraron gastos en el PDF (${bankType}).`);
+        setUploading(false);
+        return;
+      }
+      
+      // Detección de duplicados mejorada
+      const isDuplicate = (newExp) => {
+        return expenses.some(existing => {
+          if (Math.abs(existing.amount - newExp.amount) > 0.01) return false;
+          if (existing.date !== newExp.date) return false;
+          
+          const existingConcept = existing.concept.toLowerCase().slice(0, 15);
+          const newConcept = newExp.concept.toLowerCase().slice(0, 15);
+          
+          if (existingConcept.slice(0, 10) === newConcept.slice(0, 10)) return true;
+          
+          const existingWords = existing.concept.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+          const newWords = newExp.concept.toLowerCase().split(/\s+/).filter(w => w.length > 3);
+          const commonWords = existingWords.filter(w => newWords.some(nw => nw.includes(w) || w.includes(nw)));
+          
+          return commonWords.length >= 2;
+        });
+      };
+      
+      const uniqueNew = newExpenses.filter(e => !isDuplicate(e));
+      const duplicatesCount = newExpenses.length - uniqueNew.length;
+      
+      if (uniqueNew.length === 0) {
+        alert(`Todos los ${newExpenses.length} gastos del PDF ya existen (duplicados omitidos)`);
+        setUploading(false);
+        return;
+      }
+      
+      const expensesToInsert = uniqueNew.map(exp => ({
+        group_id: groupId, user_id: user.id, date: exp.date, concept: exp.concept, amount: exp.amount, category: exp.category, person: exp.person,
+      }));
+      
+      const { data: insertedData, error } = await supabase.from('expenses').insert(expensesToInsert).select();
+      
+      if (error) { alert(`Error: ${error.message}`); return; }
+      
+      const updatedExpenses = [...insertedData, ...expenses].sort((a, b) => {
+        const dateA = a.date.split('/').reverse().join('-');
+        const dateB = b.date.split('/').reverse().join('-');
+        return dateB.localeCompare(dateA);
+      });
+      
+      setExpenses(updatedExpenses);
+      const dupeMsg = duplicatesCount > 0 ? ` (${duplicatesCount} duplicados omitidos)` : '';
+      alert(`✅ ${uniqueNew.length} nuevos gastos añadidos (${bankType} - ${person})${dupeMsg}`);
+      
+    } catch (error) {
+      console.error('Error parsing PDF:', error);
+      alert('Error al procesar el PDF: ' + error.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleFileUpload = (e) => {
     const file = e.target.files?.[0];
-    if (file) { parseExcel(file); e.target.value = ''; }
+    if (!file) return;
+    
+    const fileName = file.name.toLowerCase();
+    if (fileName.endsWith('.pdf')) {
+      parsePDF(file);
+    } else if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls') || fileName.endsWith('.csv')) {
+      parseExcel(file);
+    } else {
+      alert('Formato no soportado. Usa PDF, XLSX, XLS o CSV.');
+    }
+    e.target.value = '';
   };
 
   // =====================================================
@@ -1556,9 +1892,12 @@ const ExpenseTrackerApp = () => {
   const startEdit = (expense) => { setEditingId(expense.id); setEditCategory(expense.category); };
   const cancelEdit = () => { setEditingId(null); setEditCategory(''); };
   const saveEdit = async (expenseId) => {
-    const updated = await updateExpenseInDb(expenseId, { category: editCategory });
-    if (updated) setExpenses(expenses.map(exp => exp.id === expenseId ? { ...exp, category: editCategory } : exp));
-    setEditingId(null); setEditCategory('');
+    const expense = expenses.find(e => e.id === expenseId);
+    if (!expense) return;
+    
+    // Usar la nueva función que maneja el aprendizaje
+    await handleCategoryChange(expenseId, editCategory, expense.concept);
+    setEditCategory('');
   };
 
   // =====================================================
@@ -3842,8 +4181,8 @@ const ExpenseTrackerApp = () => {
         <div className="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-3 mb-6 items-stretch sm:items-center">
           <button onClick={openManualExpenseModal} disabled={saving || !isInitialized} className="flex items-center justify-center gap-2 px-4 sm:px-6 py-3 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 text-white hover:shadow-lg font-semibold disabled:opacity-50 text-sm sm:text-base"><Plus className="w-4 h-4" />Agregar Gasto</button>
           <label className="relative cursor-pointer">
-            <input type="file" accept=".xls,.xlsx" onChange={handleFileUpload} className="hidden" disabled={uploading || !isInitialized} />
-            <div className={`flex items-center justify-center gap-2 px-4 sm:px-6 py-3 rounded-xl font-semibold text-sm sm:text-base ${uploading || !isInitialized ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg'}`}><Upload className="w-4 h-4" />{uploading ? 'Procesando...' : 'Subir Extracto'}</div>
+            <input type="file" accept=".xls,.xlsx,.csv,.pdf" onChange={handleFileUpload} className="hidden" disabled={uploading || !isInitialized} />
+            <div className={`flex items-center justify-center gap-2 px-4 sm:px-6 py-3 rounded-xl font-semibold text-sm sm:text-base ${uploading || !isInitialized ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg'}`}><Upload className="w-4 h-4" />{uploading ? 'Procesando...' : 'Subir Extracto (PDF/Excel)'}</div>
           </label>
           <button onClick={() => setShowCategoryManager(true)} className="flex items-center justify-center gap-2 px-4 py-3 bg-purple-100 text-purple-700 rounded-xl hover:bg-purple-200 font-medium sm:ml-auto text-sm sm:text-base"><ListChecks className="w-4 h-4" />Gestionar Categorías</button>
         </div>
@@ -4025,6 +4364,33 @@ const ExpenseTrackerApp = () => {
               <div className="flex gap-3 mt-6">
                 <button onClick={saveManualExpense} disabled={saving} className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg disabled:opacity-50"><Save className="w-5 h-5" />{saving ? 'Guardando...' : 'Guardar Gasto'}</button>
                 <button onClick={() => setShowManualExpenseModal(false)} className="px-6 py-3 rounded-xl font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300">Cancelar</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showLearnKeywordModal && pendingKeywordLearn && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-xl text-gray-800">🧠 Aprender Categoría</h3>
+                <button onClick={() => { setShowLearnKeywordModal(false); setPendingKeywordLearn(null); }} className="text-gray-500 hover:text-gray-700"><X className="w-6 h-6" /></button>
+              </div>
+              <div className="space-y-4">
+                <p className="text-gray-600">
+                  ¿Querés que recuerde que <strong className="text-purple-600">"{pendingKeywordLearn.keyword}"</strong> siempre vaya a <strong className="text-pink-600">"{pendingKeywordLearn.category}"</strong>?
+                </p>
+                <p className="text-sm text-gray-500">
+                  La próxima vez que aparezca un gasto con esta palabra, se categorizará automáticamente.
+                </p>
+              </div>
+              <div className="flex gap-3 mt-6">
+                <button onClick={confirmLearnKeyword} className="flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold bg-gradient-to-r from-purple-600 to-pink-600 text-white hover:shadow-lg">
+                  ✓ Sí, recordar
+                </button>
+                <button onClick={() => { setShowLearnKeywordModal(false); setPendingKeywordLearn(null); }} className="px-6 py-3 rounded-xl font-semibold bg-gray-200 text-gray-700 hover:bg-gray-300">
+                  No
+                </button>
               </div>
             </div>
           </div>
