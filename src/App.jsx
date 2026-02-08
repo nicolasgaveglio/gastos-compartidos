@@ -1970,6 +1970,11 @@ const ExpenseTrackerApp = () => {
         if (parts.length === 3 && `${parts[2]}-${parts[1].padStart(2, '0')}` !== filter.month) return false;
       }
       return true;
+    }).sort((a, b) => {
+      // Ordenar por fecha descendente (más reciente primero)
+      const dateA = a.date.split('/').reverse().join('-');
+      const dateB = b.date.split('/').reverse().join('-');
+      return dateB.localeCompare(dateA);
     });
   }, [expenses, filter]);
 
