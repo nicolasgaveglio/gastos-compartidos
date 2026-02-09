@@ -1973,7 +1973,7 @@ const ExpenseTrackerApp = () => {
     });
     
     // Ordenar por fecha descendente (más reciente primero)
-    const sorted = filtered.sort((a, b) => {
+    const sorted = [...filtered].sort((a, b) => {
       // Convertir DD/MM/YYYY a YYYY-MM-DD para comparación correcta
       const partsA = a.date.split('/');
       const partsB = b.date.split('/');
@@ -1988,6 +1988,8 @@ const ExpenseTrackerApp = () => {
       
       return dateB.localeCompare(dateA);
     });
+    
+    console.log('DEBUG ordenamiento - primeros 10:', sorted.slice(0, 10).map(e => e.date));
     
     return sorted;
   }, [expenses, filter]);
