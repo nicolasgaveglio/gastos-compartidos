@@ -1962,7 +1962,7 @@ const ExpenseTrackerApp = () => {
   // DATOS PARA GRÁFICOS
   // =====================================================
   const getFilteredExpenses = useCallback(() => {
-    return expenses.filter(exp => {
+    const filtered = expenses.filter(exp => {
       if (filter.person !== 'all' && exp.person !== filter.person) return false;
       if (filter.category !== 'all' && exp.category !== filter.category) return false;
       if (filter.month !== 'all') {
@@ -1970,12 +1970,26 @@ const ExpenseTrackerApp = () => {
         if (parts.length === 3 && `${parts[2]}-${parts[1].padStart(2, '0')}` !== filter.month) return false;
       }
       return true;
-    }).sort((a, b) => {
-      // Ordenar por fecha descendente (más reciente primero)
-      const dateA = a.date.split('/').reverse().join('-');
-      const dateB = b.date.split('/').reverse().join('-');
+    });
+    
+    // Ordenar por fecha descendente (más reciente primero)
+    const sorted = filtered.sort((a, b) => {
+      // Convertir DD/MM/YYYY a YYYY-MM-DD para comparación correcta
+      const partsA = a.date.split('/');
+      const partsB = b.date.split('/');
+      
+      // Verificar formato válido
+      if (partsA.length !== 3 || partsB.length !== 3) {
+        return 0;
+      }
+      
+      const dateA = `${partsA[2]}-${partsA[1].padStart(2, '0')}-${partsA[0].padStart(2, '0')}`;
+      const dateB = `${partsB[2]}-${partsB[1].padStart(2, '0')}-${partsB[0].padStart(2, '0')}`;
+      
       return dateB.localeCompare(dateA);
     });
+    
+    return sorted;
   }, [expenses, filter]);
 
   const getCategoryData = () => {
