@@ -332,8 +332,7 @@ const ExpenseTrackerApp = () => {
         const { data: expensesData } = await supabase
           .from('expenses')
           .select('*')
-          .eq('group_id', groupId)
-          .order('date', { ascending: false });
+          .eq('group_id', groupId);
         setExpenses(expensesData || []);
 
         const { data: installmentsData } = await supabase
