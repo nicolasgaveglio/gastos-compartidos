@@ -1961,6 +1961,7 @@ const ExpenseTrackerApp = () => {
   // DATOS PARA GRÁFICOS
   // =====================================================
   const getFilteredExpenses = useCallback(() => {
+    // Filtrar
     const filtered = expenses.filter(exp => {
       if (filter.person !== 'all' && exp.person !== filter.person) return false;
       if (filter.category !== 'all' && exp.category !== filter.category) return false;
@@ -1971,26 +1972,15 @@ const ExpenseTrackerApp = () => {
       return true;
     });
     
+    // Convertir fecha DD/MM/YYYY a número para ordenar (YYYYMMDD)
+    const toSortableDate = (dateStr) => {
+      const parts = dateStr.split('/');
+      if (parts.length !== 3) return 0;
+      return parseInt(parts[2] + parts[1].padStart(2, '0') + parts[0].padStart(2, '0'));
+    };
+    
     // Ordenar por fecha descendente (más reciente primero)
-    const sorted = [...filtered].sort((a, b) => {
-      // Convertir DD/MM/YYYY a YYYY-MM-DD para comparación correcta
-      const partsA = a.date.split('/');
-      const partsB = b.date.split('/');
-      
-      // Verificar formato válido
-      if (partsA.length !== 3 || partsB.length !== 3) {
-        return 0;
-      }
-      
-      const dateA = `${partsA[2]}-${partsA[1].padStart(2, '0')}-${partsA[0].padStart(2, '0')}`;
-      const dateB = `${partsB[2]}-${partsB[1].padStart(2, '0')}-${partsB[0].padStart(2, '0')}`;
-      
-      return dateB.localeCompare(dateA);
-    });
-    
-    console.log('DEBUG ordenamiento - primeros 10:', sorted.slice(0, 10).map(e => e.date));
-    
-    return sorted;
+    return filtered.slice().sort((a, b) => toSortableDate(b.date) - toSortableDate(a.date));
   }, [expenses, filter]);
 
   const getCategoryData = () => {
