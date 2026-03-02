@@ -14,6 +14,7 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",
     "lucide-react": "^0.290.0",
+    "pdfjs-dist": "^5.5.207",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "recharts": "^2.15.4",
