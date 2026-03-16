@@ -1684,8 +1684,8 @@ const ExpenseTrackerApp = () => {
           const year = dateParts[3];
           const formattedDate = `${day}/${month}/${year}`;
           
-          // Parsear monto
-          let amount = parseFloat(amountStr.replace('.', '').replace(',', '.'));
+          // Parsear monto - Revolut usa punto como decimal
+          let amount = parseFloat(amountStr.replace(',', '.'));
           if (isNaN(amount) || amount <= 0) continue;
           
           // Limpiar concepto
@@ -1728,7 +1728,8 @@ const ExpenseTrackerApp = () => {
             const year = dateParts[3];
             const formattedDate = `${day}/${month}/${year}`;
             
-            let amount = parseFloat(amountStr.replace('.', '').replace(',', '.'));
+            // Parsear monto - Revolut usa punto como decimal
+            let amount = parseFloat(amountStr.replace(',', '.'));
             if (isNaN(amount) || amount <= 0) continue;
             
             newExpenses.push({
