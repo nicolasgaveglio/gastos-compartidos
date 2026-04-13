@@ -10,7 +10,7 @@ import {
   Tooltip,
   Cell,
   LineChart,
-  Line,
+  Line
   PieChart,
   Pie,
   Legend,
