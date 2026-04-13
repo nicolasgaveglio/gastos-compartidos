@@ -1,4 +1,4 @@
- import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 import {
   ResponsiveContainer,
@@ -478,7 +478,7 @@ const ExpenseTrackerApp = () => {
             });
           }
         } catch (e) {
-          console.log('Usando tasas de cambio por defecto');
+          console.error('Error al cargar tasas de cambio, usando valores por defecto:', e);
         }
 
         setIsInitialized(true);
@@ -867,7 +867,8 @@ const ExpenseTrackerApp = () => {
       
       alert('✅ Presupuesto copiado del mes anterior');
     } catch (error) {
-      alert('Error al copiar presupuesto');
+      console.error('Error al copiar presupuesto:', error);
+      alert('Error al copiar presupuesto: ' + (error?.message || String(error)));
     } finally { setSaving(false); }
   };
 
